@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://opentp.dev/schemas/field.schema.json",
+  "title": "OpenTrackPlan Field",
+  "description": "Field definition. Use 'value' for fixed values, 'enum' or 'dict' for allowed values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Human-readable field name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Field description"
+    },
+    "type": {
+      "type": "string",
+      "description": "Data type",
+      "enum": ["string", "number", "boolean"]
+    },
+    "enum": {
+      "type": "array",
+      "description": "List of allowed values for this field"
+    },
+    "dict": {
+      "type": "string",
+      "description": "Reference to a dictionary (e.g., 'taxonomy/apps')"
+    },
+    "required": {
+      "type": "boolean",
+      "description": "Whether this field is required"
+    },
+    "value": {
+      "description": "Fixed value for this field (string, number, or boolean)"
+    },
+    "rules": {
+      "type": "object",
+      "description": "Validation rules for this field",
+      "additionalProperties": true
+    }
+  }
+}

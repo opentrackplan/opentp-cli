@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://opentp.dev/schemas/opentp.schema.json",
+  "title": "OpenTrackPlan Configuration",
+  "description": "Schema for opentp.yaml - the main configuration file",
+  "type": "object",
+  "required": ["opentp", "info", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "opentp": {
+      "$ref": "version.schema.json"
+    },
+    "info": {
+      "type": "object",
+      "description": "Project metadata",
+      "required": ["title", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Project title"
+        },
+        "description": {
+          "type": "string",
+          "description": "Project description"
+        },
+        "version": {
+          "type": "string",
+          "description": "Project version"
+        },
+        "contact": {
+          "type": "array",
+          "description": "Contact information",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "description": "Specification",
+      "required": ["events"],
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "type": "object",
+          "description": "Events configuration",
+          "required": ["key", "paths", "taxonomy", "payload"],
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "object",
+              "description": "Event key format",
+              "required": ["pattern"],
+              "additionalProperties": false,
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Pattern for generating event keys"
+                }
+              }
+            },
+            "paths": {
+              "type": "object",
+              "description": "File paths configuration",
+              "additionalProperties": {
+                "$ref": "#/definitions/pathConfig"
+              }
+            },
+            "taxonomy": {
+              "type": "object",
+              "description": "Taxonomy fields definition",
+              "additionalProperties": {
+                "$ref": "#/definitions/taxonomyField"
+              }
+            },
+            "payload": {
+              "type": "object",
+              "description": "Payload configuration",
+              "required": ["platforms", "schema"],
+              "additionalProperties": false,
+              "properties": {
+                "platforms": {
+                  "type": "object",
+                  "description": "Platform definitions. 'all' is required",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "schema": {
+                  "type": "object",
+                  "description": "Payload fields schema",
+                  "additionalProperties": {
+                    "$ref": "field.schema.json"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "transforms": {
+          "type": "object",
+          "description": "Transform definitions",
+          "additionalProperties": {
+            "$ref": "#/definitions/transform"
+          }
+        },
+        "validators": {
+          "type": "object",
+          "description": "External validators (webhooks)",
+          "additionalProperties": {
+            "$ref": "#/definitions/validator"
+          }
+        },
+        "generators": {
+          "type": "array",
+          "description": "Code generators configuration",
+          "items": {
+            "type": "object"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Custom extensions",
+          "additionalProperties": true
+        },
+        "external": {
+          "type": "object",
+          "description": "External resources configuration",
+          "additionalProperties": false,
+          "properties": {
+            "rules": {
+              "type": "array",
+              "description": "Paths to directories with custom validation rules",
+              "items": {
+                "type": "string"
+              }
+            },
+            "transforms": {
+              "type": "array",
+              "description": "Paths to directories with custom transform steps",
+              "items": {
+                "type": "string"
+              }
+            },
+            "generators": {
+              "type": "array",
+              "description": "Paths to directories with custom generators",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "pathConfig": {
+      "type": "object",
+      "description": "Path configuration",
+      "required": ["root", "pattern"],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Root directory path"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "File name pattern"
+        }
+      }
+    },
+    "taxonomyField": {
+      "type": "object",
+      "description": "Taxonomy field definition",
+      "required": ["title", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Human-readable field name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Field description"
+        },
+        "type": {
+          "type": "string",
+          "description": "Data type",
+          "enum": ["string", "number", "boolean"]
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this field is required"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Pattern for composite fields"
+        },
+        "enum": {
+          "type": "array",
+          "description": "Inline list of allowed values",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dict": {
+          "type": "string",
+          "description": "Reference to dictionary (e.g., 'taxonomy/apps')"
+        },
+        "rules": {
+          "type": "object",
+          "description": "Validation rules for this field",
+          "additionalProperties": true
+        },
+        "fragments": {
+          "type": "object",
+          "description": "Sub-fields for composite fields",
+          "additionalProperties": {
+            "$ref": "#/definitions/taxonomyField"
+          }
+        }
+      }
+    },
+    "transformStep": {
+      "type": "object",
+      "description": "Transform step with uniform format: { step: 'name', params?: {...} }",
+      "required": ["step"],
+      "additionalProperties": false,
+      "properties": {
+        "step": {
+          "type": "string",
+          "description": "Step name: lower, upper, trim, replace"
+        },
+        "params": {
+          "type": "object",
+          "description": "Step parameters (varies by step type)"
+        }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "description": "Transform definition with configurable steps",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "description": "Transform steps",
+          "items": {
+            "$ref": "#/definitions/transformStep"
+          }
+        }
+      }
+    },
+    "validator": {
+      "type": "object",
+      "description": "External validator configuration",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Webhook URL"
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Request timeout"
+        }
+      }
+    }
+  }
+}
