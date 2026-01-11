@@ -7,4 +7,7 @@ await build({
     target: "node18",
     format: "cjs",
     bundle: true,
+    banner: {
+        js: "#!/usr/bin/env node",
+    },
 });

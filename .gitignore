@@ -21,11 +21,15 @@ node_modules/
 # Build outputs
 build/
 dist/
+releases/
 *.cache/
 
 # Testing
 coverage/
 .nyc_output/
+
+# Installations
+install/
 
 # TypeScript
 *.tsbuildinfo
