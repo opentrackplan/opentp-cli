@@ -1,0 +1,17 @@
+opentp: 2025-12
+
+event:
+  key: auth::fragments_missing::p1::internal-false
+
+  taxonomy:
+    action: action_detail does not provide all required fragments
+    action_detail: "missing-separator"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: fragments_missing
+      event_category:
+        value: auth

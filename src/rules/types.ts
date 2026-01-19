@@ -4,11 +4,11 @@
 export interface RuleContext {
   /** Field name being validated */
   fieldName: string;
-  /** Full path to the field, e.g., "payload.schema.application_id" */
+  /** Full path to the field, e.g., "taxonomy.action" or "payload.web.schema.application_id" */
   fieldPath: string;
   /** Event key, e.g., "app::auth::login::click" */
   eventKey: string;
-  /** Full field definition from spec (for checking against spec rules) */
+  /** Full field definition from spec (for validating checks) */
   specField?: FieldDefinition;
 }
 
@@ -55,7 +55,7 @@ export interface FieldDefinition {
   dict?: string;
   value?: unknown;
   required?: boolean;
-  rules?: Record<string, unknown>;
+  checks?: Record<string, unknown>;
 }
 
 /**

@@ -1,0 +1,16 @@
+opentp: 2025-12
+
+event:
+  key: auth::payload_missing_required::p1::internal-false
+
+  taxonomy:
+    action: Payload schema is missing a required field
+    action_detail: "test::payload"
+
+  payload:
+    web:
+      schema:
+        event_name:
+          value: payload_missing_required
+        event_category:
+          value: auth

@@ -1,11 +1,12 @@
 // Types for OpenTrackPlan CLI
 
-// === Version ===
-export type Version = string; // X.Y.Z
+// === Spec Version ===
+// OpenTP spec version (format: YYYY-MM)
+export type Version = string;
 
 // === Dictionary ===
 export interface Dict {
-  opentp: Version;
+  opentp?: Version;
   dict: {
     type: "string" | "number" | "boolean";
     values: (string | number | boolean)[];
@@ -17,14 +18,20 @@ export interface Field {
   // Metadata
   title?: string;
   description?: string;
+  pii?: Record<string, unknown> & {
+    /** Reserved: PII kind identifier (tool-defined values) */
+    kind?: string;
+    /** Reserved: masker implementation id (tool-defined values; built-in: 'star') */
+    masker?: string;
+  };
   // Schema (for generators)
   type?: "string" | "number" | "boolean";
   enum?: (string | number | boolean)[]; // inline values
   dict?: string; // reference to dictionary file
   required?: boolean;
   value?: string | number | boolean; // fixed value
-  // Validation rules
-  rules?: Record<string, unknown>;
+  // Validation checks
+  checks?: Record<string, unknown>;
 }
 
 // === Taxonomy Field (in opentp.yaml) ===
@@ -34,41 +41,50 @@ export interface TaxonomyField {
   type: "string" | "number" | "boolean";
   required?: boolean;
   pattern?: string;
-  enum?: string[]; // inline values
+  enum?: (string | number | boolean)[]; // inline values
   dict?: string; // reference to dictionary file
-  rules?: Record<string, unknown>;
+  checks?: Record<string, unknown>;
   fragments?: Record<string, TaxonomyField>;
 }
 
-// === Path Config ===
-export interface PathConfig {
+// === Paths Config ===
+export interface EventsPathConfig {
   root: string;
   pattern: string;
 }
 
-// === Transform Step ===
-// Uniform format: { step: 'name', params?: {...} }
-export interface TransformStep {
-  step: string;
-  params?: Record<string, unknown>;
+export interface DictionariesPathConfig {
+  root: string;
 }
 
-// === Transform ===
-export interface Transform {
-  steps: TransformStep[];
+// === Transforms (opentp.yaml) ===
+export type TransformStepConfig = string | Record<string, unknown>;
+export type TransformPipelineConfig = TransformStepConfig[];
+
+// === PII (opentp.yaml) ===
+export interface PiiReservedFieldConfig {
+  title?: string;
+  description?: string;
+  required?: boolean;
+  enum?: string[];
+  dict?: string;
+  checks?: Record<string, unknown>;
 }
 
-// === Validator (webhook) ===
-export interface Validator {
-  url?: string;
-  timeout?: string;
+export interface PiiMetaFieldConfig {
+  title?: string;
+  description?: string;
+  type: "string" | "number" | "boolean";
+  required?: boolean;
+  enum?: (string | number | boolean)[];
+  dict?: string;
+  checks?: Record<string, unknown>;
 }
 
-// === External Resources ===
-export interface ExternalConfig {
-  rules?: string[]; // paths to directories with custom rules
-  transforms?: string[]; // paths to directories with custom transforms
-  generators?: string[]; // paths to directories with custom generators
+export interface PiiConfig {
+  kind?: PiiReservedFieldConfig;
+  masker?: PiiReservedFieldConfig;
+  schema?: Record<string, PiiMetaFieldConfig>;
 }
 
 // === OpenTP Config (opentp.yaml) ===
@@ -81,22 +97,22 @@ export interface OpenTPConfig {
     contact?: string[];
   };
   spec: {
+    paths: {
+      events: EventsPathConfig;
+      dictionaries?: DictionariesPathConfig;
+    };
     events: {
       key: {
         pattern: string;
       };
-      paths: Record<string, PathConfig>;
       taxonomy: Record<string, TaxonomyField>;
       payload: {
-        platforms: Record<string, string[]>;
+        targets: Record<string, string[]>;
         schema: Record<string, Field>;
       };
+      pii?: PiiConfig;
     };
-    transforms?: Record<string, Transform>;
-    validators?: Record<string, Validator>;
-    generators?: object[];
-    extensions?: Record<string, unknown>;
-    external?: ExternalConfig;
+    transforms?: Record<string, TransformPipelineConfig>;
   };
 }
 
@@ -125,28 +141,56 @@ export interface IgnoreCheck {
 
 // === Payload Version ===
 export interface PayloadVersion {
-  changes?: string[];
+  $ref?: string;
+  meta?: PayloadMeta;
   schema: Record<string, Field>;
 }
 
-// === Platform Payload ===
-export interface PlatformPayload {
-  active: Version;
-  history: Record<string, PayloadVersion>;
+export interface PayloadMeta {
+  changes?: string | string[];
+  deprecated?: {
+    reason: string;
+    date?: string;
+  };
+}
+
+export type VersionedTargetPayload = {
+  current: string;
+  [key: string]: PayloadVersion | string;
+};
+
+export type TargetPayload = PayloadVersion | VersionedTargetPayload;
+
+export type EventPayload = TargetPayload | Record<string, TargetPayload>;
+
+export interface ResolvedPayloadVersion {
+  key: string;
+  $ref?: string;
+  meta?: PayloadMeta;
+  schema: Record<string, Field>;
+}
+
+export interface ResolvedTargetPayload {
+  target: string;
+  current: string;
+  aliases: Record<string, string>;
+  versions: Record<string, ResolvedPayloadVersion>;
+}
+
+export interface ResolvedEventPayload {
+  targets: Record<string, ResolvedTargetPayload>;
 }
 
 // === Event (from event.yaml) ===
 export interface EventFile {
-  opentp: Version;
+  opentp?: Version;
   event: {
     key: string;
     lifecycle?: EventLifecycle;
     taxonomy: Record<string, unknown>;
     aliases?: EventAlias[];
-    ignoreChecks?: IgnoreCheck[];
-    payload: {
-      platforms: Record<string, PlatformPayload>;
-    };
+    ignore?: IgnoreCheck[];
+    payload: EventPayload;
   };
 }
 
@@ -154,15 +198,14 @@ export interface EventFile {
 export interface ResolvedEvent {
   filePath: string;
   relativePath: string;
+  opentp?: Version;
   key: string;
   expectedKey: string;
-  taxonomy: Record<string, string>;
+  taxonomy: Record<string, unknown>;
   lifecycle?: EventLifecycle;
   aliases?: EventAlias[];
-  ignoreChecks: IgnoreCheck[];
-  payload: {
-    platforms: Record<string, PlatformPayload>;
-  };
+  ignore: IgnoreCheck[];
+  payload: EventPayload;
 }
 
 // === Validation Error ===

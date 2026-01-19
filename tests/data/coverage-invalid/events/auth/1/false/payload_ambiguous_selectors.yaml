@@ -1,0 +1,27 @@
+opentp: 2025-12
+
+event:
+  key: auth::payload_ambiguous_selectors::p1::internal-false
+
+  taxonomy:
+    action: Two selectors overlap without a subset relationship (ambiguous)
+    action_detail: "test::payload"
+
+  payload:
+    mobile:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: payload_ambiguous_selectors
+        event_category:
+          value: auth
+
+    web_ios:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: payload_ambiguous_selectors
+        event_category:
+          value: auth

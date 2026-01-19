@@ -46,7 +46,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 ```bash
 # Clone the repository
 git clone https://github.com/opentrackplan/opentp-cli.git
-cd opentrackplan
+cd opentp-cli
 
 # Install dependencies
 npm install
@@ -67,14 +67,15 @@ npm run lint
 src/
 ├── cli.ts              # CLI entry point
 ├── core/               # Core modules (config, validator, etc.)
-├── rules/              # Validation rules
+├── rules/              # Validation checks (historical folder name)
 ├── transforms/         # String transformations
 ├── generators/         # Output generators (JSON, YAML, template)
 ├── types/              # TypeScript type definitions
 └── util/               # Utility functions
 
-schemas/                # JSON schemas for validation
-examples/               # Example tracking plans
+dist/                   # Bundled CLI output (esbuild)
+docs/                   # CLI documentation (Starlight)
+tests/data/             # Integration fixtures for validation tests
 ```
 
 ### Running Tests
@@ -111,9 +112,9 @@ npm run format
 3. Create `transform.spec.ts` with tests
 4. Register in `src/transforms/index.ts`
 
-#### Adding a Validation Rule
+#### Adding a Validation Check
 
-1. Create a new directory: `src/rules/my-rule/`
+1. Create a new directory: `src/rules/my-check/`
 2. Create `index.ts` with `RuleDefinition`
 3. Create `rule.spec.ts` with tests
 4. Register in `src/rules/index.ts`

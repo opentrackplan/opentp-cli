@@ -22,7 +22,7 @@ export function loadEvents(
   const allFiles = scanDirectory(eventsPath);
   const yamlFiles = filterByExtension(allFiles, [".yaml", ".yml"]);
 
-  // Create transforms from config
+  // Create transforms from config (built-in steps + optional external steps)
   const transforms = createTransforms(config.spec.transforms ?? {});
 
   for (const [relativePath, absolutePath] of yamlFiles) {
@@ -50,12 +50,13 @@ export function loadEvents(
       const resolved: ResolvedEvent = {
         filePath: absolutePath,
         relativePath,
+        opentp: eventFile.opentp,
         key: eventFile.event.key,
         expectedKey,
         taxonomy,
         lifecycle: eventFile.event.lifecycle,
         aliases: eventFile.event.aliases,
-        ignoreChecks: eventFile.event.ignoreChecks ?? [],
+        ignore: eventFile.event.ignore ?? [],
         payload: eventFile.event.payload,
       };
 
@@ -75,20 +76,20 @@ function extractTaxonomy(
   pathVariables: Record<string, string>,
   eventFile: EventFile,
   config: OpenTPConfig,
-): Record<string, string> {
-  const taxonomy: Record<string, string> = {};
+): Record<string, unknown> {
+  const taxonomy: Record<string, unknown> = {};
   const taxonomyConfig = config.spec.events.taxonomy;
 
   // Process each taxonomy field from config
   for (const [fieldName, fieldConfig] of Object.entries(taxonomyConfig)) {
     // Field can come from path
     if (pathVariables[fieldName] !== undefined) {
-      taxonomy[fieldName] = pathVariables[fieldName];
+      taxonomy[fieldName] = parseTypedValue(pathVariables[fieldName], fieldConfig.type);
 
       // If field is composite with pattern, parse into fragments
-      if (fieldConfig.pattern && fieldConfig.fragments) {
+      if (fieldConfig.pattern && fieldConfig.fragments && typeof taxonomy[fieldName] === "string") {
         const fragments = extractFragments(
-          pathVariables[fieldName],
+          taxonomy[fieldName] as string,
           fieldConfig.pattern,
           fieldConfig.fragments,
         );
@@ -97,7 +98,17 @@ function extractTaxonomy(
     }
     // Or from event file (e.g. trigger, team)
     else if (eventFile.event.taxonomy[fieldName] !== undefined) {
-      taxonomy[fieldName] = String(eventFile.event.taxonomy[fieldName]);
+      taxonomy[fieldName] = eventFile.event.taxonomy[fieldName];
+
+      // If field is composite with pattern, parse into fragments
+      if (fieldConfig.pattern && fieldConfig.fragments && typeof taxonomy[fieldName] === "string") {
+        const fragments = extractFragments(
+          taxonomy[fieldName] as string,
+          fieldConfig.pattern,
+          fieldConfig.fragments,
+        );
+        Object.assign(taxonomy, fragments);
+      }
     }
   }
 
@@ -137,10 +148,32 @@ function extractFragments(
  * Generates event key from pattern and transforms
  */
 function generateEventKey(
-  taxonomy: Record<string, string>,
+  taxonomy: Record<string, unknown>,
   config: OpenTPConfig,
   transforms: Record<string, (value: string) => string>,
 ): string {
   const keyPattern = config.spec.events.key.pattern;
-  return applyPattern(keyPattern, taxonomy, transforms);
+  const variables: Record<string, string> = {};
+  for (const [key, value] of Object.entries(taxonomy)) {
+    if (value === undefined || value === null) continue;
+    variables[key] = String(value);
+  }
+  return applyPattern(keyPattern, variables, transforms);
+}
+
+function parseTypedValue(
+  raw: string,
+  type: TaxonomyField["type"],
+): string | number | boolean {
+  if (type === "string") return raw;
+
+  if (type === "number") {
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : raw;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  return raw;
 }

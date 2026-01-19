@@ -7,7 +7,7 @@ import { templateGenerator } from "./index";
 
 const mockContext: GeneratorContext = {
   config: {
-    opentp: "0.5.0",
+    opentp: "2025-12",
     info: {
       title: "Test App",
       version: "1.0.0",
@@ -17,7 +17,7 @@ const mockContext: GeneratorContext = {
         key: { pattern: "{app}::{name}" },
         paths: {},
         taxonomy: {},
-        payload: { platforms: { all: [] }, schema: {} },
+        payload: { targets: { all: [] }, schema: {} },
       },
     },
   },
@@ -29,8 +29,8 @@ const mockContext: GeneratorContext = {
       expectedKey: "app::login",
       taxonomy: { app: "myapp", name: "login" },
       lifecycle: { status: "active" },
-      ignoreChecks: [],
-      payload: { platforms: {} },
+      ignore: [],
+      payload: { targets: {} },
     },
     {
       filePath: "/test/events/app/logout.yaml",
@@ -38,8 +38,8 @@ const mockContext: GeneratorContext = {
       key: "app::logout",
       expectedKey: "app::logout",
       taxonomy: { app: "myapp", name: "logout" },
-      ignoreChecks: [],
-      payload: { platforms: {} },
+      ignore: [],
+      payload: { targets: {} },
     },
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),

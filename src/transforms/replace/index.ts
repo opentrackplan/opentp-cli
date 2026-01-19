@@ -1,33 +1,25 @@
 import type { StepDefinition } from "../types";
 
 export interface ReplaceParams {
-  pattern: string;
-  with: string;
-  flags?: string;
+  from: string;
+  to: string;
 }
 
 /**
- * Replace text matching a regex pattern
+ * Replace all occurrences of a literal string
  *
  * @example
- * { step: 'replace', params: { pattern: '\\s+', with: '_' } }
- * { step: 'replace', params: { pattern: '[0-9]', with: '', flags: 'g' } }
+ * { replace: { from: \" \", to: \"_\" } }
  */
 export const replace: StepDefinition = {
   name: "replace",
-  factory: (params?: Record<string, unknown>) => {
-    const {
-      pattern,
-      with: replacement = "",
-      flags = "g",
-    } = (params ?? {}) as unknown as ReplaceParams;
+  factory: (params?: unknown) => {
+    const { from, to } = (params ?? {}) as unknown as ReplaceParams;
 
-    if (!pattern) {
+    if (typeof from !== "string" || from.length === 0) {
       return (value: string) => value;
     }
 
-    const regex = new RegExp(pattern, flags);
-
-    return (value: string) => value.replace(regex, replacement);
+    return (value: string) => value.split(from).join(String(to ?? ""));
   },
 };

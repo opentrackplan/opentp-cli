@@ -22,27 +22,22 @@ Analytics tracking is broken:
 
 ```yaml
 # events/auth/login_button_click.yaml
-opentp: 2025-06
+opentp: 2025-12
 
 event:
   key: auth::login_button_click
 
   taxonomy:
-    area: auth
-    event: login_button_click
     action: User clicks the login button
 
   payload:
-    platforms:
-      all:
-        active: 1.0.0
-        history:
-          1.0.0:
-            schema:
-              event_name:
-                value: login_button_click
-              auth_method:
-                enum: [email, google, github]
+    schema:
+      event_name:
+        value: login_button_click
+      auth_method:
+        type: string
+        enum: [email, google, github]
+        required: true
 ```
 
 ## Installation
@@ -72,22 +67,23 @@ npx opentp validate
 ### 1. Create `opentp.yaml`
 
 ```yaml
-opentp: 2025-06
+opentp: 2025-12
 
 info:
   title: My App Tracking Plan
   version: 1.0.0
 
 spec:
+  paths:
+    events:
+      root: /events
+      pattern: "{area}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
   events:
     key:
       pattern: "{area | slug}::{event | slug}"
-    paths:
-      events:
-        root: /events
-        pattern: "{area}/{event}.yaml"
-      dictionaries:
-        root: /dictionaries
     taxonomy:
       area:
         title: Area
@@ -102,7 +98,7 @@ spec:
         type: string
         required: true
     payload:
-      platforms:
+      targets:
         all: [web, ios, android]
       schema:
         event_name:
@@ -111,35 +107,32 @@ spec:
 
   transforms:
     slug:
-      steps:
-        - step: lower
-        - step: trim
-        - step: replace
-          params:
-            pattern: " "
-            with: "_"
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
+
 ```
 
 ### 2. Create Events
 
 ```yaml
 # events/auth/login_click.yaml
-opentp: 2025-06
+opentp: 2025-12
 
 event:
   key: auth::login_click
   taxonomy:
     action: User clicks login button
   payload:
-    platforms:
-      all:
-        active: 1.0.0
-        history:
-          1.0.0:
-            schema:
-              event_name:
-                value: login_click
+    schema:
+      event_name:
+        value: login_click
 ```
+
+Note: taxonomy fields referenced in `spec.paths.events.pattern` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
 
 ### 3. Validate
 
@@ -164,7 +157,7 @@ opentp validate
 ```bash
 opentp validate --root ./my-project     # Custom project root
 opentp validate --verbose               # Verbose output
-opentp validate --external-rules ./rules    # Custom validation rules
+opentp validate --external-rules ./rules    # Custom validation checks
 opentp validate --external-transforms ./transforms  # Custom transforms
 ```
 
@@ -186,7 +179,7 @@ Define allowed values once, reference everywhere:
 
 ```yaml
 # dictionaries/taxonomy/areas.yaml
-opentp: 2025-06
+opentp: 2025-12
 
 dict:
   type: string
@@ -206,35 +199,38 @@ taxonomy:
 
 ### Transforms
 
-Transform taxonomy values into event keys:
+Transforms modify taxonomy values when generating event keys.
 
 | Transform | Description |
 |-----------|-------------|
 | `lower` | Lowercase |
 | `upper` | Uppercase |
 | `trim` | Remove whitespace |
-| `replace` | Replace pattern |
+| `replace` | Replace literal substring |
 | `truncate` | Limit length |
+| `collapse` | Collapse repeated characters |
+| `keep` | Keep only allowed characters |
 | `to-snake-case` | Convert to snake_case |
 | `to-kebab` | Convert to kebab-case |
 | `to-camel-case` | Convert to camelCase |
+| `to-underscore` | Replace spaces with underscores |
 | `transliterate` | Character mapping |
 
-### Validation Rules
+### Validation Checks
 
-Add rules to fields:
+Add checks to fields:
 
 ```yaml
 taxonomy:
   area:
     type: string
-    rules:
+    checks:
       max-length: 50
-      regex: "^[a-z_]+$"
+      pattern: "^[a-z_]+$"
       not-empty: true
 ```
 
-Built-in rules: `max-length`, `min-length`, `regex`, `starts-with`, `ends-with`, `contains`, `not-empty`, `webhook`
+Built-in checks: `max-length`, `min-length`, `pattern`, `starts-with`, `ends-with`, `contains`, `not-empty`, `webhook`
 
 ### Webhook Validation
 
@@ -244,7 +240,7 @@ Validate against external API:
 taxonomy:
   company_id:
     type: string
-    rules:
+    checks:
       webhook:
         url: https://api.company.com/validate
         headers:
@@ -302,23 +298,23 @@ my-tracking-plan/
         └── application_id.yaml
 ```
 
-See [example/](./example) for a complete working example.
+See `tests/data/coverage-valid/` for a complete working example used by the CLI test suite.
 
 ## JSON Schemas
 
 IDE autocompletion and validation:
 
 ```yaml
-# yaml-language-server: $schema=https://opentp.dev/schemas/latest/event.schema.json
-opentp: 2025-06
+# yaml-language-server: $schema=https://opentp.dev/schemas/2025-12/event.schema.json
+opentp: 2025-12
 event:
   ...
 ```
 
 Available schemas:
-- `https://opentp.dev/schemas/latest/opentp.schema.json` — main config
-- `https://opentp.dev/schemas/latest/event.schema.json` — events
-- `https://opentp.dev/schemas/latest/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/2025-12/opentp.schema.json` — main config
+- `https://opentp.dev/schemas/2025-12/event.schema.json` — events
+- `https://opentp.dev/schemas/2025-12/dict.schema.json` — dictionaries
 
 ## Enterprise Installation
 
@@ -336,8 +332,8 @@ Config is saved to `~/.opentp/config` for future upgrades.
 - [x] CLI validation
 - [x] JSON Schemas
 - [x] Auto-fix keys
-- [x] Validation rules system
-- [x] Custom rules and transforms
+- [x] Validation checks system
+- [x] Custom checks and transforms
 - [x] Generators (JSON, YAML)
 - [ ] GitHub Action
 - [ ] VS Code extension

@@ -1,6 +1,6 @@
 import type { RuleDefinition } from "../types";
 
-interface RegexParams {
+interface PatternParams {
   pattern: string;
   flags?: string;
 }
@@ -11,11 +11,11 @@ interface RegexParams {
  * Params: string (pattern) or { pattern: string, flags?: string }
  *
  * Examples:
- *   regex: "^[a-z_]+$"
- *   regex: { pattern: "^[a-z]+$", flags: "i" }
+ *   pattern: "^[a-z_]+$"
+ *   pattern: { pattern: "^[a-z]+$", flags: "i" }
  */
-export const regex: RuleDefinition = {
-  name: "regex",
+export const pattern: RuleDefinition = {
+  name: "pattern",
   validate: (value, params) => {
     let pattern: string;
     let flags: string | undefined;
@@ -23,13 +23,13 @@ export const regex: RuleDefinition = {
     if (typeof params === "string") {
       pattern = params;
     } else if (typeof params === "object" && params !== null) {
-      const p = params as RegexParams;
+      const p = params as PatternParams;
       pattern = p.pattern;
       flags = p.flags;
     } else {
       return {
         valid: false,
-        error: "Invalid regex params: expected string or { pattern, flags? }",
+        error: "Invalid pattern params: expected string or { pattern, flags? }",
         code: "INVALID_PARAMS",
       };
     }
@@ -48,13 +48,13 @@ export const regex: RuleDefinition = {
         return {
           valid: false,
           error: `Value "${value}" does not match pattern /${pattern}/${flags || ""}`,
-          code: "REGEX_NO_MATCH",
+          code: "PATTERN_NO_MATCH",
         };
       }
     } catch (_err) {
       return {
         valid: false,
-        error: `Invalid regex pattern: ${pattern}`,
+        error: `Invalid pattern: ${pattern}`,
         code: "INVALID_REGEX",
       };
     }

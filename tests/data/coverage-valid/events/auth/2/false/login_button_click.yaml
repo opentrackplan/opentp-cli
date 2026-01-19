@@ -1,0 +1,29 @@
+opentp: 2025-12
+
+event:
+  key: auth::login_button_click::click::login_button::p2::internal-false
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User clicks the login button
+    action_detail: "click::login button"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: login_button_click
+      event_category:
+        value: auth
+      auth_method:
+        value: google
+      user_id:
+        type: string
+        pii:
+          kind: user_id
+          masker: star
+          owner: analytics
+          jira: ANALYTICS-123

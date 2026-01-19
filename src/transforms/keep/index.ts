@@ -13,7 +13,7 @@ export interface KeepParams {
  */
 export const keep: StepDefinition = {
   name: "keep",
-  factory: (params?: Record<string, unknown>) => {
+  factory: (params?: unknown) => {
     const { chars = "" } = (params ?? {}) as unknown as KeepParams;
 
     if (!chars) {

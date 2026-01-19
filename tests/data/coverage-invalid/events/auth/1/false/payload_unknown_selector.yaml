@@ -1,0 +1,18 @@
+opentp: 2025-12
+
+event:
+  key: auth::payload_unknown_selector::p1::internal-false
+
+  taxonomy:
+    action: Payload uses an unknown target selector
+    action_detail: "test::payload"
+
+  payload:
+    desktop:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: payload_unknown_selector
+        event_category:
+          value: auth

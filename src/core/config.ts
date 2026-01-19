@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { SPEC_VERSION } from "../meta";
 import type { OpenTPConfig } from "../types";
 import { fileExists, loadYaml } from "../util";
 
@@ -24,8 +25,22 @@ export function loadConfig(filePath: string): OpenTPConfig {
   const config = loadYaml<OpenTPConfig>(filePath);
 
   // Basic structure validation
-  if (!config.opentp) {
+  if (typeof config.opentp !== "string" || config.opentp.length === 0) {
     throw new Error("Missing required field: opentp");
+  }
+
+  // Spec version format: YYYY-MM (valid month)
+  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(config.opentp)) {
+    throw new Error(
+      `Invalid spec version '${config.opentp}'. Expected format YYYY-MM (e.g., 2025-12)`,
+    );
+  }
+
+  // CLI compatibility check
+  if (config.opentp !== SPEC_VERSION) {
+    throw new Error(
+      `Unsupported OpenTrackPlan schema version '${config.opentp}'. This CLI supports '${SPEC_VERSION}'.`,
+    );
   }
 
   if (!config.info) {
@@ -44,16 +59,28 @@ export function loadConfig(filePath: string): OpenTPConfig {
     throw new Error("Missing required field: spec");
   }
 
+  if (!config.spec.paths) {
+    throw new Error("Missing required field: spec.paths");
+  }
+
+  if (!config.spec.paths.events) {
+    throw new Error("Missing required field: spec.paths.events");
+  }
+
+  if (!config.spec.paths.events.root) {
+    throw new Error("Missing required field: spec.paths.events.root");
+  }
+
+  if (!config.spec.paths.events.pattern) {
+    throw new Error("Missing required field: spec.paths.events.pattern");
+  }
+
   if (!config.spec.events) {
     throw new Error("Missing required field: spec.events");
   }
 
   if (!config.spec.events.key?.pattern) {
     throw new Error("Missing required field: spec.events.key.pattern");
-  }
-
-  if (!config.spec.events.paths) {
-    throw new Error("Missing required field: spec.events.paths");
   }
 
   if (!config.spec.events.taxonomy) {
@@ -64,12 +91,12 @@ export function loadConfig(filePath: string): OpenTPConfig {
     throw new Error("Missing required field: spec.events.payload");
   }
 
-  if (!config.spec.events.payload.platforms) {
-    throw new Error("Missing required field: spec.events.payload.platforms");
+  if (!config.spec.events.payload.targets) {
+    throw new Error("Missing required field: spec.events.payload.targets");
   }
 
-  if (!config.spec.events.payload.platforms.all) {
-    throw new Error("Missing required field: spec.events.payload.platforms.all");
+  if (!config.spec.events.payload.targets.all) {
+    throw new Error("Missing required field: spec.events.payload.targets.all");
   }
 
   if (!config.spec.events.payload.schema) {
@@ -93,26 +120,15 @@ export function resolvePath(rootPath: string, configPath: string): string {
  * Gets events directory path from config
  */
 export function getEventsPath(config: OpenTPConfig, rootPath: string): string | null {
-  // Look for 'events' path in paths
-  const eventsConfig = config.spec.events.paths.events;
-  if (eventsConfig) {
-    return resolvePath(rootPath, eventsConfig.root);
-  }
-
-  // Fallback to first found path
-  const firstPath = Object.values(config.spec.events.paths)[0];
-  if (firstPath) {
-    return resolvePath(rootPath, firstPath.root);
-  }
-
-  return null;
+  const eventsConfig = config.spec.paths.events;
+  return resolvePath(rootPath, eventsConfig.root);
 }
 
 /**
  * Gets dictionaries directory path from config
  */
 export function getDictsPath(config: OpenTPConfig, rootPath: string): string | null {
-  const dictsConfig = config.spec.events.paths.dictionaries;
+  const dictsConfig = config.spec.paths.dictionaries;
   if (dictsConfig) {
     return resolvePath(rootPath, dictsConfig.root);
   }
@@ -123,11 +139,5 @@ export function getDictsPath(config: OpenTPConfig, rootPath: string): string | n
  * Gets pattern for event files
  */
 export function getEventsPattern(config: OpenTPConfig): string | null {
-  const eventsConfig = config.spec.events.paths.events;
-  if (eventsConfig) {
-    return eventsConfig.pattern;
-  }
-
-  const firstPath = Object.values(config.spec.events.paths)[0];
-  return firstPath?.pattern ?? null;
+  return config.spec.paths.events.pattern;
 }

@@ -1,0 +1,23 @@
+opentp: 2025-12
+
+event:
+  key: auth::pii_meta_missing_required::p1::internal-false
+
+  taxonomy:
+    action: PII metadata is missing required governance fields
+    action_detail: "test::pii"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: pii_meta_missing_required
+        event_category:
+          value: auth
+        user_id:
+          type: string
+          pii:
+            kind: user_id
+            jira: ANALYTICS-123

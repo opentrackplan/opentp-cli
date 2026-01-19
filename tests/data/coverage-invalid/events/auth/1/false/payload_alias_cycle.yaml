@@ -1,0 +1,22 @@
+opentp: 2025-12
+
+event:
+  key: auth::payload_alias_cycle::p1::internal-false
+
+  taxonomy:
+    action: Payload version aliases contain a cycle
+    action_detail: "test::payload"
+
+  payload:
+    web:
+      current: a
+      a: b
+      b: a
+      "1.0.0":
+        schema:
+          application_id:
+            value: web-app
+          event_name:
+            value: payload_alias_cycle
+          event_category:
+            value: auth

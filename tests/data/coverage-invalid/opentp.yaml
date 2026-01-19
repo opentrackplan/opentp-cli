@@ -1,0 +1,111 @@
+opentp: 2025-12
+
+info:
+  title: Coverage Fixture (Invalid)
+  version: 1.0.0
+  description: Fixture intentionally containing schema and validation errors
+
+spec:
+  paths:
+    events:
+      root: /events
+      pattern: "{area}/{priority_level}/{is_internal}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
+  events:
+    key:
+      pattern: "{area | slug}::{event | slug}::p{priority_level}::internal-{is_internal}"
+
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        dict: taxonomy/areas
+        required: true
+      priority_level:
+        title: Priority Level
+        type: number
+        enum: [1, 2, 3]
+        required: true
+      is_internal:
+        title: Internal Event
+        type: boolean
+        enum: [true, false]
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+      action:
+        title: Action
+        type: string
+        required: true
+        checks:
+          max-length: 100
+      action_detail:
+        title: Action Detail
+        type: string
+        required: true
+        pattern: "{verb}::{object}"
+        fragments:
+          verb:
+            title: Verb
+            type: string
+            required: true
+          object:
+            title: Object
+            type: string
+            required: true
+      custom_id:
+        title: Custom Id
+        type: string
+        required: false
+        checks:
+          unknown-check: true
+
+    payload:
+      targets:
+        all: [web, ios, android]
+        mobile: [ios, android]
+        web_ios: [web, ios]
+      schema:
+        application_id:
+          type: string
+          dict: data/application_id
+          required: true
+        event_name:
+          type: string
+          required: true
+        event_category:
+          type: string
+          required: true
+        user_id:
+          type: string
+          required: false
+
+    pii:
+      kind:
+        required: true
+        dict: governance/pii-kinds
+      masker:
+        required: false
+      schema:
+        owner:
+          type: string
+          dict: governance/pii-owners
+          required: true
+        jira:
+          type: string
+          required: true
+          checks:
+            pattern: "^[A-Z]+-[0-9]+$"
+
+  transforms:
+    slug:
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160

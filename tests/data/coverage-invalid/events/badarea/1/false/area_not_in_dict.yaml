@@ -1,0 +1,17 @@
+opentp: 2025-12
+
+event:
+  key: badarea::area_not_in_dict::p1::internal-false
+
+  taxonomy:
+    action: Area is not present in taxonomy/areas dictionary
+    action_detail: "test::area"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: area_not_in_dict
+      event_category:
+        value: badarea

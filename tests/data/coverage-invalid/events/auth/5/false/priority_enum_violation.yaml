@@ -1,0 +1,17 @@
+opentp: 2025-12
+
+event:
+  key: auth::priority_enum_violation::p5::internal-false
+
+  taxonomy:
+    action: Priority level is outside the allowed enum
+    action_detail: "test::priority"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: priority_enum_violation
+      event_category:
+        value: auth

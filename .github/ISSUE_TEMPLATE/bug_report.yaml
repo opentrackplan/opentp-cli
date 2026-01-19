@@ -1,0 +1,95 @@
+name: "🐛 Bug report"
+description: Report a bug in OpenTrackPlan
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please fill out the form as completely as possible to help us fix it faster.
+
+  - type: checkboxes
+    id: no-duplicates
+    attributes:
+      label: Did you check for duplicates?
+      description: I searched open and closed issues and found no duplicates.
+      options:
+        - label: I confirm
+          required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - block (prevents usage)
+        - high
+        - medium
+        - low
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Affected area(s)
+      options:
+        - label: "CLI (opentp)"
+        - label: "Validation"
+        - label: "Generators"
+        - label: "Documentation / Specification"
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `opentp --version` and versions of affected packages (if different)
+      placeholder: "opentp 0.5.0"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS / Node.js / package manager
+      placeholder: "macOS 14, Node 20.12, npm 10.8"
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the bug
+      placeholder: |
+        1. Run: `opentp validate`
+        2. File: ./events/...
+        3. Expected vs actual below
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened?
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / logs
+      render: shell
+      placeholder: Paste stack trace / CLI output
+
+  - type: input
+    id: minimal-repo
+    attributes:
+      label: Minimal reproduction repo (or Gist)
+      placeholder: https://github.com/...
+
+  - type: textarea
+    id: spec-snippet
+    attributes:
+      label: Spec/event snippet (YAML)
+      render: yaml
+      placeholder: |
+        opentp: 2025-12
+        info: ...
+        spec: ...

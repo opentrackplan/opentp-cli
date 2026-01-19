@@ -35,42 +35,27 @@ describe("transforms/index", () => {
 
   describe("createTransform", () => {
     it("creates transform with single step", () => {
-      const transform = createTransform({
-        steps: [{ step: "lower" }],
-      });
+      const transform = createTransform(["lower"]);
       expect(transform("HELLO")).toBe("hello");
     });
 
     it("creates transform with multiple steps", () => {
-      const transform = createTransform({
-        steps: [{ step: "lower" }, { step: "to-underscore" }],
-      });
+      const transform = createTransform(["lower", "to-underscore"]);
       expect(transform("Hello World")).toBe("hello_world");
     });
 
     it("creates transform with step params", () => {
-      const transform = createTransform({
-        steps: [
-          {
-            step: "transliterate",
-            params: { map: { ä: "ae", ö: "oe" } },
-          },
-        ],
-      });
+      const transform = createTransform([{ transliterate: { map: { ä: "ae", ö: "oe" } } }]);
       expect(transform("äöl")).toBe("aeoel");
     });
 
     it("applies truncate step", () => {
-      const transform = createTransform({
-        steps: [{ step: "lower" }, { step: "truncate", params: { maxLen: 5 } }],
-      });
+      const transform = createTransform(["lower", { truncate: 5 }]);
       expect(transform("HELLO WORLD")).toBe("hello");
     });
 
     it("handles unknown step gracefully", () => {
-      const transform = createTransform({
-        steps: [{ step: "unknown" }],
-      });
+      const transform = createTransform(["unknown"]);
       // Should return value unchanged
       expect(transform("hello")).toBe("hello");
     });
@@ -79,12 +64,8 @@ describe("transforms/index", () => {
   describe("createTransforms", () => {
     it("creates multiple named transforms", () => {
       const transforms = createTransforms({
-        slug: {
-          steps: [{ step: "lower" }, { step: "to-underscore" }],
-        },
-        compact: {
-          steps: [{ step: "lower" }, { step: "collapse" }],
-        },
+        slug: ["lower", "to-underscore"],
+        compact: ["lower", "collapse"],
       });
 
       expect(transforms.slug("Hello World")).toBe("hello_world");
@@ -101,15 +82,13 @@ describe("transforms/index", () => {
         ß: "ss",
       };
 
-      const transform = createTransform({
-        steps: [
-          { step: "transliterate", params: { map: germanMap } },
-          { step: "lower" },
-          { step: "to-underscore" },
-          { step: "keep", params: { chars: "a-z0-9_:" } },
-          { step: "truncate", params: { maxLen: 160 } },
-        ],
-      });
+      const transform = createTransform([
+        { transliterate: { map: germanMap } },
+        "lower",
+        "to-underscore",
+        { keep: { chars: "a-z0-9_:" } },
+        { truncate: 160 },
+      ]);
 
       expect(transform("Größe")).toBe("groesse");
       expect(transform("Über - Büro - Beschreibung")).toBe("ueber_buero_beschreibung");

@@ -1,0 +1,30 @@
+opentp: 2025-12
+
+event:
+  key: auth::login_experiment::experiment::login::p3::internal-false
+
+  taxonomy:
+    action: User sees a login experiment variant
+    action_detail: "experiment::login"
+
+  payload:
+    all:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: login_experiment
+        event_category:
+          value: auth
+        auth_method:
+          value: github
+
+    ios:
+      current: "1.0.0"
+      "1.0.0":
+        schema:
+          application_id:
+            value: mobile-app
+          device_model:
+            type: string
+            required: true

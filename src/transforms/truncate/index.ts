@@ -13,8 +13,13 @@ export interface TruncateParams {
  */
 export const truncate: StepDefinition = {
   name: "truncate",
-  factory: (params?: Record<string, unknown>) => {
-    const { maxLen } = (params ?? {}) as unknown as TruncateParams;
+  factory: (params?: unknown) => {
+    const maxLen =
+      typeof params === "number"
+        ? params
+        : typeof params === "object" && params !== null
+          ? ((params as TruncateParams).maxLen as number)
+          : undefined;
 
     if (!maxLen || maxLen <= 0) {
       return (value: string) => value;

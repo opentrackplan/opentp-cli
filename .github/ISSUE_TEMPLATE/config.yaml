@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & discussions
+    url: https://github.com/opentrackplan/opentp-cli/discussions
+    about: Usage questions and open-ended ideas go here.
+  - name: 🔐 Security policy
+    url: https://github.com/opentrackplan/opentp-cli/security/policy
+    about: Found a vulnerability? Please follow our security policy.

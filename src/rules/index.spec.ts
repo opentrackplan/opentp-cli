@@ -12,7 +12,7 @@ describe("rules registry", () => {
     const names = getRuleNames();
     expect(names).toContain("max-length");
     expect(names).toContain("min-length");
-    expect(names).toContain("regex");
+    expect(names).toContain("pattern");
     expect(names).toContain("starts-with");
     expect(names).toContain("ends-with");
     expect(names).toContain("contains");
@@ -73,7 +73,7 @@ describe("validateWithRules", () => {
       ctx,
     );
     expect(errors).toHaveLength(1);
-    expect(errors[0].code).toBe("UNKNOWN_RULE");
+    expect(errors[0].code).toBe("UNKNOWN_CHECK");
   });
 });
 

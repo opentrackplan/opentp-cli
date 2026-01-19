@@ -3,7 +3,9 @@
 
 import "./cli";
 
-export type { TransformConfig, TransformFn, TransformStep } from "./transforms";
+// Version info
+export { SPEC_SCHEMAS_URL, SPEC_VERSION, VERSION } from "./meta";
+
+export type { TransformConfig, TransformFn, TransformStepConfig } from "./transforms";
 // Re-export for library usage
 export { createTransform, createTransforms, getStep, getStepNames } from "./transforms";
-export type { Transform } from "./types";

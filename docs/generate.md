@@ -61,14 +61,19 @@ opentp generate json --output ./dist/events.json
 opentp generate my-format --external-generators ./my-generators
 ```
 
+External generators are loaded only via `--external-generators` (the spec does not include external plugin loading).
+
 ## Output Format
 
 ### JSON Output
 
 ```json
 {
-  "version": "2025-06",
-  "generated": "2025-01-10T12:00:00Z",
+  "opentp": "2025-12",
+  "info": {
+    "title": "My App Tracking Plan",
+    "version": "1.0.0"
+  },
   "events": [
     {
       "key": "auth::login_click",
@@ -77,39 +82,38 @@ opentp generate my-format --external-generators ./my-generators
         "event": "login_click",
         "action": "User clicks the login button"
       },
+      "lifecycle": { "status": "active" },
       "payload": {
-        "platforms": {
-          "all": {
-            "active": "1.0.0",
-            "schema": {
-              "event_name": { "value": "login_click" }
-            }
-          }
+        "schema": {
+          "event_name": { "value": "login_click" }
         }
       }
     }
-  ]
+  ],
+  "dictionaries": {}
 }
 ```
 
 ### YAML Output
 
 ```yaml
-version: 2025-06
-generated: 2025-01-10T12:00:00Z
+opentp: 2025-12
+info:
+  title: My App Tracking Plan
+  version: 1.0.0
 events:
   - key: auth::login_click
     taxonomy:
       area: auth
       event: login_click
       action: User clicks the login button
+    lifecycle:
+      status: active
     payload:
-      platforms:
-        all:
-          active: 1.0.0
-          schema:
-            event_name:
-              value: login_click
+      schema:
+        event_name:
+          value: login_click
+dictionaries: {}
 ```
 
 ## Custom Generators
@@ -120,7 +124,8 @@ Create custom generators for any output format:
 // my-generators/typescript/index.js
 module.exports = {
   name: 'typescript',
-  generate: async (events, config) => {
+  generate: async (context) => {
+    const { config, events, dictionaries, options } = context;
     // Generate TypeScript SDK
     return {
       files: [

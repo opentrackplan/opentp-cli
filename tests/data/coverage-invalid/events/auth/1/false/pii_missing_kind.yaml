@@ -1,0 +1,24 @@
+opentp: 2025-12
+
+event:
+  key: auth::pii_missing_kind::p1::internal-false
+
+  taxonomy:
+    action: PII metadata is missing required pii.kind
+    action_detail: "test::pii"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: pii_missing_kind
+        event_category:
+          value: auth
+        user_id:
+          type: string
+          pii:
+            owner: analytics
+            jira: ANALYTICS-123
+            masker: star

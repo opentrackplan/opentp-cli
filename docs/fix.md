@@ -67,23 +67,20 @@ spec:
       pattern: "{area | slug}::{event | slug}"
   transforms:
     slug:
-      steps:
-        - step: lower
-        - step: replace
-          params:
-            pattern: " "
-            with: "_"
+      - lower
+      - replace:
+          from: " "
+          to: "_"
 ```
 
 And this event:
 
 ```yaml
-# events/auth/login.yaml
+# events/auth/login_button_click.yaml
 event:
   key: wrong_key  # incorrect
   taxonomy:
-    area: Auth
-    event: Login Button Click
+    action: User clicks login button
 ```
 
 Running `opentp fix` will update the key to:

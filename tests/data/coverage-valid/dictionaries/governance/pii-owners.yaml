@@ -1,0 +1,8 @@
+opentp: 2025-12
+
+dict:
+  type: string
+  values:
+    - analytics
+    - data-governance
+    - security

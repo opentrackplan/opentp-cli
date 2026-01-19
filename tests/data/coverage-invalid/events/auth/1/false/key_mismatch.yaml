@@ -1,0 +1,17 @@
+opentp: 2025-12
+
+event:
+  key: auth::key_mismatch__WRONG::p1::internal-false
+
+  taxonomy:
+    action: Event key does not match the expected key derived from taxonomy
+    action_detail: "test::key"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: key_mismatch
+      event_category:
+        value: auth

@@ -21,7 +21,7 @@ opentp validate [options]
 |--------|-------------|
 | `--root <path>` | Project root directory |
 | `--verbose` | Show detailed output |
-| `--external-rules <path>` | Load custom validation rules |
+| `--external-rules <path>` | Load custom validation checks |
 | `--external-transforms <path>` | Load custom transforms |
 
 ## Examples
@@ -52,24 +52,22 @@ opentp validate --verbose
 
 Shows detailed information about each validated event.
 
-### With custom rules
+### With custom checks
 
 ```bash
 opentp validate --external-rules ./my-rules
 ```
 
-Loads additional validation rules from the specified directory.
+Loads additional validation checks from the specified directory.
 
 ## Validation Checks
 
 The validator performs these checks:
 
-1. **Schema validation** — event files match JSON schema
-2. **Key validation** — event keys match the configured pattern
-3. **Taxonomy validation** — required taxonomy fields are present
-4. **Dictionary validation** — values match referenced dictionaries
-5. **Rule validation** — fields pass all configured rules
-6. **Path validation** — file paths match configured patterns
+1. **Key validation** — event keys match the configured pattern
+2. **Taxonomy validation** — required fields + dict/enum + checks
+3. **Payload validation** — targets/versioning merge + required fields + dict/enum + checks + PII
+4. **Path extraction** — taxonomy variables extracted from file paths (based on the configured pattern)
 
 ## Error Output
 

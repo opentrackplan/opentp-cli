@@ -84,8 +84,8 @@ export async function validateWithRules(
     if (!rule) {
       errors.push({
         valid: false,
-        error: `Unknown rule: ${ruleName}`,
-        code: "UNKNOWN_RULE",
+        error: `Unknown check: ${ruleName}`,
+        code: "UNKNOWN_CHECK",
       });
       continue;
     }

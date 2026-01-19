@@ -13,7 +13,7 @@ export interface TrimParams {
  */
 export const trim: StepDefinition = {
   name: "trim",
-  factory: (params?: Record<string, unknown>) => {
+  factory: (params?: unknown) => {
     const { chars = "" } = (params ?? {}) as unknown as TrimParams;
 
     if (!chars) {

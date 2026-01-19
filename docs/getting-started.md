@@ -40,22 +40,23 @@ npx opentp validate
 Create a configuration file in your project root:
 
 ```yaml
-opentp: 2025-06
+opentp: 2025-12
 
 info:
   title: My App Tracking Plan
   version: 1.0.0
 
 spec:
+  paths:
+    events:
+      root: /events
+      pattern: "{area}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
   events:
     key:
       pattern: "{area | slug}::{event | slug}"
-    paths:
-      events:
-        root: /events
-        pattern: "{area}/{event}.yaml"
-      dictionaries:
-        root: /dictionaries
     taxonomy:
       area:
         title: Area
@@ -70,7 +71,7 @@ spec:
         type: string
         required: true
     payload:
-      platforms:
+      targets:
         all: [web, ios, android]
       schema:
         event_name:
@@ -79,13 +80,13 @@ spec:
 
   transforms:
     slug:
-      steps:
-        - step: lower
-        - step: trim
-        - step: replace
-          params:
-            pattern: " "
-            with: "_"
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
+
 ```
 
 ### 2. Create Your First Event
@@ -98,26 +99,21 @@ mkdir -p events/auth
 
 ```yaml
 # events/auth/login_click.yaml
-opentp: 2025-06
+opentp: 2025-12
 
 event:
   key: auth::login_click
 
   taxonomy:
-    area: auth
-    event: login_click
     action: User clicks the login button
 
   payload:
-    platforms:
-      all:
-        active: 1.0.0
-        history:
-          1.0.0:
-            schema:
-              event_name:
-                value: login_click
+    schema:
+      event_name:
+        value: login_click
 ```
+
+Note: taxonomy fields referenced in `spec.paths.events.pattern` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
 
 ### 3. Validate
 
@@ -154,20 +150,20 @@ my-tracking-plan/
 Add JSON schema references for autocompletion:
 
 ```yaml
-# yaml-language-server: $schema=https://opentp.dev/schemas/latest/opentp.schema.json
-opentp: 2025-06
+# yaml-language-server: $schema=https://opentp.dev/schemas/2025-12/opentp.schema.json
+opentp: 2025-12
 ...
 ```
 
 Available schemas:
 
-- `https://opentp.dev/schemas/latest/opentp.schema.json` — main config
-- `https://opentp.dev/schemas/latest/event.schema.json` — events
-- `https://opentp.dev/schemas/latest/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/2025-12/opentp.schema.json` — main config
+- `https://opentp.dev/schemas/2025-12/event.schema.json` — events
+- `https://opentp.dev/schemas/2025-12/dict.schema.json` — dictionaries
 
 ## Next Steps
 
 - [CLI Reference](/cli) — learn all available commands
 - [Configuration](/schema/opentp-yaml) — detailed configuration options
 - [Transforms](/transforms) — string transformation pipelines
-- [Rules](/rules) — field validation rules
+- [Checks](/rules) — field validation checks

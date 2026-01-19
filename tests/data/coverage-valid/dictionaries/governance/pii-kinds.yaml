@@ -1,0 +1,10 @@
+opentp: 2025-12
+
+dict:
+  type: string
+  values:
+    - email
+    - phone
+    - ip
+    - user_id
+    - device_id

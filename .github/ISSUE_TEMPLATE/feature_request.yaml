@@ -1,0 +1,55 @@
+name: "✨ Feature request"
+description: Request a new feature or DX improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Please describe the problem, the proposal, and acceptance criteria.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Related problem
+      description: What pain/limitation do you have today?
+      placeholder: When I ..., it’s hard/impossible to ...
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      placeholder: I want a command/option/check ... that does ...
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Area(s)
+      options:
+        - label: "Documentation / Specification"
+        - label: "CLI (opentp)"
+        - label: "Validation / Checks"
+        - label: "Generators"
+        - label: "Transforms"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: We tried ... but ...
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact & acceptance criteria
+      placeholder: |
+        - Users can ...
+        - Documentation updated
+        - Tests cover the feature
+
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Is this a breaking change?
+      options:
+        - label: Yes, migration may be required
+        - label: No, backwards compatible

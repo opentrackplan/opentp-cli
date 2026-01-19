@@ -1,0 +1,61 @@
+opentp: 2025-12
+
+event:
+  key: onboarding::onboarding_step_complete::complete::onboarding_step::p1::internal-true
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User completes an onboarding step
+    action_detail: "complete::onboarding step"
+
+  payload:
+    all:
+      current: stable
+      stable: "1.1.0"
+      legacy: "1.0.0"
+      "1.0.0":
+        meta:
+          changes: Initial version
+        schema:
+          application_id:
+            value: web-app
+          event_name:
+            value: onboarding_step_complete
+          event_category:
+            value: onboarding
+          step_index:
+            type: number
+            required: true
+      "1.1.0":
+        $ref: "1.0.0"
+        meta:
+          changes:
+            - Added device_model
+        schema:
+          device_model:
+            type: string
+            required: false
+
+    ios:
+      current: ios-stable
+      ios-stable: ios-1
+      ios-1:
+        $ref: "all::1.0.0"
+        meta:
+          changes: iOS overlay derived from all::1.0.0
+        schema:
+          application_id:
+            value: mobile-app
+          device_model:
+            type: string
+            required: true
+
+    android:
+      schema:
+        application_id:
+          value: mobile-app
+        device_model:
+          type: string
+          required: true

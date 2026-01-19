@@ -19,8 +19,7 @@ import { loadExternalTransforms } from "./transforms";
 import type { EventFile } from "./types";
 import { loadYaml, saveYaml } from "./util/files";
 import { logger, setLogLevel } from "./util/logger";
-
-const VERSION = "0.1.0";
+import { SPEC_SCHEMAS_URL, SPEC_VERSION, VERSION } from "./meta";
 
 interface CliOptions {
   root: string;
@@ -117,7 +116,7 @@ function parseArgs(args: string[]): CliOptions {
 
 function printHelp(): void {
   console.log(`
-OpenTrackPlan CLI v${VERSION}
+OpenTrackPlan CLI v${VERSION} (spec ${SPEC_VERSION})
 
 Usage: opentp [command] [options]
 
@@ -130,19 +129,22 @@ Commands:
 
 Generators:
   json                  Export events as JSON
+  yaml                  Export events as YAML
+  template              Render events using a template file
 
-Options:
+  Options:
   --root, -r <path>              Project root directory (default: current directory)
   --fix, -f                      Auto-fix issues (same as 'fix' command)
   --verbose, -v                  Verbose output
   --json                         Output results as JSON
-  --external-rules <path>        Path to directory with custom rules (can be repeated)
+  --external-rules <path>        Path to directory with custom checks (can be repeated)
   --external-transforms <path>   Path to directory with custom transforms (can be repeated)
   --external-generators <path>   Path to directory with custom generators (can be repeated)
 
-Generator Options:
+  Generator Options:
   --output, -o <path>            Output file path (default: stdout)
   --pretty / --no-pretty         Pretty print output (default: true)
+  --file <path>                  Template file path (for template generator)
 
 Environment:
   OPENTP_ROOT         Alternative to --root option
@@ -153,11 +155,14 @@ Examples:
   opentp fix
   opentp generate json
   opentp generate json --output ./events.json
+  opentp generate yaml -o ./events.yaml
+  opentp generate template --file ./template.hbs -o ./EVENTS.md
 `);
 }
 
 function printVersion(): void {
-  console.log(`opentp v${VERSION}`);
+  console.log(`opentp v${VERSION} (spec ${SPEC_VERSION})`);
+  console.log(`Schemas: ${SPEC_SCHEMAS_URL}`);
 }
 
 async function runValidate(options: CliOptions): Promise<number> {
@@ -176,11 +181,18 @@ async function runValidate(options: CliOptions): Promise<number> {
   }
 
   logger.debug({ configPath }, "Loading config");
-  const config = loadConfig(configPath);
+  let config: Awaited<ReturnType<typeof loadConfig>>;
+  try {
+    config = loadConfig(configPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ file: configPath }, message);
+    return 1;
+  }
   logger.debug({ title: config.info.title, version: config.info.version }, "Config loaded");
 
   // 2. Load external transforms (before loading events, since transforms are used there)
-  const allTransformsPaths = [...(config.spec.external?.transforms ?? []), ...externalTransforms];
+  const allTransformsPaths = [...externalTransforms];
 
   for (const transformPath of allTransformsPaths) {
     try {
@@ -194,11 +206,14 @@ async function runValidate(options: CliOptions): Promise<number> {
   // 3. Load dictionaries
   const dictsPath = getDictsPath(config, root);
   let dictionaries = new Map<string, (string | number | boolean)[]>();
+  let dictIssues: Array<{ file: string; path: string; message: string }> = [];
 
   if (dictsPath) {
     logger.debug({ path: dictsPath }, "Loading dictionaries");
-    dictionaries = loadDictionaries(dictsPath);
-    logger.debug({ count: dictionaries.size }, "Dictionaries loaded");
+    const result = loadDictionaries(dictsPath, config.opentp);
+    dictionaries = result.dictionaries;
+    dictIssues = result.issues;
+    logger.debug({ count: dictionaries.size, issues: dictIssues.length }, "Dictionaries loaded");
   }
 
   // 4. Load events
@@ -238,7 +253,16 @@ async function runValidate(options: CliOptions): Promise<number> {
 
   // 6. Validate
   logger.debug("Starting validation");
-  const errors = await validateEvents(events, config, dictionaries, externalRules);
+  const eventErrors = await validateEvents(events, config, dictionaries, externalRules);
+  const errors = [
+    ...dictIssues.map((issue) => ({
+      event: `dictionaries/${issue.file}`,
+      path: issue.path,
+      message: issue.message,
+      severity: "error" as const,
+    })),
+    ...eventErrors,
+  ];
 
   // 7. Output result
   if (json) {
@@ -280,10 +304,17 @@ async function _runExport(options: CliOptions): Promise<number> {
   }
 
   logger.debug({ configPath }, "Loading config");
-  const config = loadConfig(configPath);
+  let config: Awaited<ReturnType<typeof loadConfig>>;
+  try {
+    config = loadConfig(configPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ file: configPath }, message);
+    return 1;
+  }
 
   const dictsPath = getDictsPath(config, root);
-  const dictionaries = dictsPath ? loadDictionaries(dictsPath) : new Map();
+  const dictionaries = dictsPath ? loadDictionaries(dictsPath, config.opentp).dictionaries : new Map();
   const eventsPath = getEventsPath(config, root);
   const eventsPattern = getEventsPattern(config);
 
@@ -327,19 +358,23 @@ async function runGenerate(options: CliOptions): Promise<number> {
     return 1;
   }
 
-  // Load external generators from config and CLI
+  // Load opentp.yaml (required for generation). External generators are loaded only via CLI flags.
   const configPath = findConfigFile(root);
   if (!configPath) {
     logger.error("opentp.yaml not found");
     return 1;
   }
 
-  const config = loadConfig(configPath);
+  let config: Awaited<ReturnType<typeof loadConfig>>;
+  try {
+    config = loadConfig(configPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ file: configPath }, message);
+    return 1;
+  }
 
-  const allGeneratorPaths = [
-    ...((config.spec.external?.generators ?? []) as string[]),
-    ...externalGenerators,
-  ];
+  const allGeneratorPaths = [...externalGenerators];
 
   for (const generatorPath of allGeneratorPaths) {
     try {
@@ -364,7 +399,7 @@ async function runGenerate(options: CliOptions): Promise<number> {
 
   // Load data
   const dictsPath = getDictsPath(config, root);
-  const dictionaries = dictsPath ? loadDictionaries(dictsPath) : new Map();
+  const dictionaries = dictsPath ? loadDictionaries(dictsPath, config.opentp).dictionaries : new Map();
   const eventsPath = getEventsPath(config, root);
   const eventsPattern = getEventsPattern(config);
 

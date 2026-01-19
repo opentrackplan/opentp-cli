@@ -1,17 +1,17 @@
 ---
-title: Validation Rules
-description: Field validation rules for enforcing constraints.
+title: Validation Checks
+description: Field validation checks for enforcing constraints.
 sidebar:
   order: 6
 ---
 
-# Validation Rules
+# Validation Checks
 
-Rules validate field values in taxonomy and payload definitions.
+Checks validate field values in taxonomy and payload definitions.
 
-## Using Rules
+## Using Checks
 
-Add rules to field definitions:
+Add checks to field definitions:
 
 ```yaml
 # opentp.yaml
@@ -20,37 +20,33 @@ spec:
     taxonomy:
       area:
         type: string
-        rules:
+        checks:
           max-length: 50
-          regex: "^[a-z_]+$"
+          pattern: "^[a-z_]+$"
           not-empty: true
 ```
 
-Rules can also be applied in event payload schemas:
+Checks can also be applied in event payload schemas:
 
 ```yaml
 # events/auth/login.yaml
 payload:
-  platforms:
-    all:
-      history:
-        1.0.0:
-          schema:
-            user_id:
-              type: string
-              rules:
-                min-length: 1
-                max-length: 100
+  schema:
+    user_id:
+      type: string
+      checks:
+        min-length: 1
+        max-length: 100
 ```
 
-## Built-in Rules
+## Built-in Checks
 
 ### max-length
 
 Maximum string length.
 
 ```yaml
-rules:
+checks:
   max-length: 50
 ```
 
@@ -64,7 +60,7 @@ rules:
 Minimum string length.
 
 ```yaml
-rules:
+checks:
   min-length: 3
 ```
 
@@ -73,13 +69,13 @@ rules:
 | `hello` | `3` | Valid |
 | `hi` | `3` | Invalid |
 
-### regex
+### pattern
 
 Match a regular expression.
 
 ```yaml
-rules:
-  regex: "^[a-z_]+$"
+checks:
+  pattern: "^[a-z_]+$"
 ```
 
 | Value | Pattern | Result |
@@ -92,7 +88,7 @@ rules:
 Value must not be empty.
 
 ```yaml
-rules:
+checks:
   not-empty: true
 ```
 
@@ -107,7 +103,7 @@ rules:
 Value must start with a prefix.
 
 ```yaml
-rules:
+checks:
   starts-with: "app_"
 ```
 
@@ -121,7 +117,7 @@ rules:
 Value must end with a suffix.
 
 ```yaml
-rules:
+checks:
   ends-with: "_event"
 ```
 
@@ -135,7 +131,7 @@ rules:
 Value must contain a substring.
 
 ```yaml
-rules:
+checks:
   contains: "_"
 ```
 
@@ -149,7 +145,7 @@ rules:
 Validate against an external API.
 
 ```yaml
-rules:
+checks:
   webhook:
     url: https://api.company.com/validate
     headers:
@@ -190,23 +186,23 @@ The webhook should return JSON:
 { "valid": false, "error": "Company ID not found" }
 ```
 
-## Combining Rules
+## Combining Checks
 
-Multiple rules are evaluated in order:
+Multiple checks are evaluated in order:
 
 ```yaml
-rules:
+checks:
   not-empty: true
   min-length: 3
   max-length: 50
-  regex: "^[a-z_]+$"
+  pattern: "^[a-z_]+$"
 ```
 
-All rules must pass for the value to be valid.
+All checks must pass for the value to be valid.
 
-## Custom Rules
+## Custom Checks
 
-Create custom validation rules in JavaScript:
+Create custom validation checks in JavaScript:
 
 ```javascript
 // my-rules/company-id/index.js
@@ -236,7 +232,7 @@ Use in your tracking plan:
 taxonomy:
   company:
     type: string
-    rules:
+    checks:
       company-id: true
 ```
 
@@ -246,24 +242,15 @@ Load with CLI:
 opentp validate --external-rules ./my-rules
 ```
 
-Or in config:
-
-```yaml
-# opentp.yaml
-spec:
-  external:
-    rules: ./my-rules
-```
-
 ### Rule Context
 
-Custom rules receive a context object:
+Custom checks receive a context object:
 
 ```javascript
 validate: (value, params, context) => {
-  // context.field - field name
-  // context.path - full path (e.g., "taxonomy.area")
-  // context.event - current event object
-  // context.config - opentp.yaml config
+  // context.fieldName  - field name
+  // context.fieldPath  - full path (e.g., "taxonomy.area")
+  // context.eventKey   - current event key (e.g., "auth::login_click")
+  // context.specField  - field definition from opentp.yaml (optional)
 }
 ```

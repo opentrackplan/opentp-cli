@@ -1,0 +1,17 @@
+opentp: 2025-12
+
+event:
+  key: auth::boolean_type_violation::p1::internal-maybe
+
+  taxonomy:
+    action: is_internal is not a valid boolean in the file path
+    action_detail: "test::boolean"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: boolean_type_violation
+      event_category:
+        value: auth

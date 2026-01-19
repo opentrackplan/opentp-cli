@@ -12,7 +12,7 @@ export interface TransliterateParams {
  */
 export const transliterate: StepDefinition = {
   name: "transliterate",
-  factory: (params?: Record<string, unknown>) => {
+  factory: (params?: unknown) => {
     const { map = {} } = (params ?? {}) as unknown as TransliterateParams;
 
     return (value: string) => {

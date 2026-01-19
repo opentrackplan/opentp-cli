@@ -1,0 +1,19 @@
+opentp: 2025-12
+
+event:
+  key: auth::payload_value_type_invalid::p1::internal-false
+
+  taxonomy:
+    action: Payload fixed value has an invalid type (object)
+    action_detail: "test::payload"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value:
+            foo: bar
+        event_name:
+          value: payload_value_type_invalid
+        event_category:
+          value: auth
