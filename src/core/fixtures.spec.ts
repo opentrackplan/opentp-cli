@@ -1,11 +1,11 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ValidationError } from "../types";
 import { getDictsPath, getEventsPath, getEventsPattern, loadConfig } from "./config";
 import type { DictionaryIssue } from "./dict";
 import { loadDictionaries } from "./dict";
 import { loadEvents } from "./event";
 import { validateEvents } from "./validator";
-import type { ValidationError } from "../types";
 
 type FixtureName = "coverage-valid" | "coverage-invalid";
 

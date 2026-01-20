@@ -15,11 +15,11 @@ import { loadEvents } from "./core/event";
 import { formatErrors, validateEvents } from "./core/validator";
 import type { GeneratorOptions } from "./generators";
 import { getGenerator, getGeneratorNames, loadExternalGenerators } from "./generators";
+import { SPEC_SCHEMAS_URL, SPEC_VERSION, VERSION } from "./meta";
 import { loadExternalTransforms } from "./transforms";
 import type { EventFile } from "./types";
 import { loadYaml, saveYaml } from "./util/files";
 import { logger, setLogLevel } from "./util/logger";
-import { SPEC_SCHEMAS_URL, SPEC_VERSION, VERSION } from "./meta";
 
 interface CliOptions {
   root: string;
@@ -314,7 +314,9 @@ async function _runExport(options: CliOptions): Promise<number> {
   }
 
   const dictsPath = getDictsPath(config, root);
-  const dictionaries = dictsPath ? loadDictionaries(dictsPath, config.opentp).dictionaries : new Map();
+  const dictionaries = dictsPath
+    ? loadDictionaries(dictsPath, config.opentp).dictionaries
+    : new Map();
   const eventsPath = getEventsPath(config, root);
   const eventsPattern = getEventsPattern(config);
 
@@ -399,7 +401,9 @@ async function runGenerate(options: CliOptions): Promise<number> {
 
   // Load data
   const dictsPath = getDictsPath(config, root);
-  const dictionaries = dictsPath ? loadDictionaries(dictsPath, config.opentp).dictionaries : new Map();
+  const dictionaries = dictsPath
+    ? loadDictionaries(dictsPath, config.opentp).dictionaries
+    : new Map();
   const eventsPath = getEventsPath(config, root);
   const eventsPattern = getEventsPattern(config);
 

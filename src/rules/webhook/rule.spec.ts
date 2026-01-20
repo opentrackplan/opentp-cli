@@ -155,7 +155,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    await webhook.validate("value", { url: "https://${TEST_API_HOST}/validate" }, ctx);
+    await webhook.validate("value", { url: `https://\\${TEST_API_HOST}/validate` }, ctx);
     expect(fetch).toHaveBeenCalledWith("https://api.test.com/validate", expect.any(Object));
 
     delete process.env.TEST_API_HOST;
@@ -172,7 +172,7 @@ describe("webhook rule", () => {
       "value",
       {
         url: "https://api.example.com/validate",
-        headers: { Authorization: "Bearer ${TEST_API_KEY}" },
+        headers: { Authorization: `Bearer \\${TEST_API_KEY}` },
       },
       ctx,
     );

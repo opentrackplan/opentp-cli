@@ -5,9 +5,9 @@ import {
   validateFieldExclusivity,
   validateWithRules,
 } from "../rules";
-import type { Field, OpenTPConfig, ResolvedEvent, TaxonomyField, ValidationError } from "../types";
+import type { OpenTPConfig, ResolvedEvent, TaxonomyField, ValidationError } from "../types";
 import { getDictValues } from "./dict";
-import { UNVERSIONED_VERSION_KEY, resolveEventPayload } from "./payload";
+import { resolveEventPayload, UNVERSIONED_VERSION_KEY } from "./payload";
 
 function buildIgnoreSet(ignoreChecks: Array<{ path: string }>): Set<string> {
   const ignore = new Set<string>();
@@ -114,12 +114,7 @@ export async function validateEvent(
   errors.push(...taxonomyErrors);
 
   // 3. Payload validation
-  const payloadErrors = await validatePayload(
-    event,
-    config,
-    dictionaries,
-    ignore,
-  );
+  const payloadErrors = await validatePayload(event, config, dictionaries, ignore);
   errors.push(...payloadErrors);
 
   return errors;
@@ -137,7 +132,9 @@ async function validateTaxonomy(
   const errors: ValidationError[] = [];
 
   function isEmpty(value: unknown): boolean {
-    return value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+    return (
+      value === undefined || value === null || (typeof value === "string" && value.trim() === "")
+    );
   }
 
   function validateType(

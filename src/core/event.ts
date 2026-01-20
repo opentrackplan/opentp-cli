@@ -161,10 +161,7 @@ function generateEventKey(
   return applyPattern(keyPattern, variables, transforms);
 }
 
-function parseTypedValue(
-  raw: string,
-  type: TaxonomyField["type"],
-): string | number | boolean {
+function parseTypedValue(raw: string, type: TaxonomyField["type"]): string | number | boolean {
   if (type === "string") return raw;
 
   if (type === "number") {

@@ -38,7 +38,11 @@ function isVersionedTargetPayload(value: unknown): value is VersionedTargetPaylo
   return typeof (value as Record<string, unknown>).current === "string";
 }
 
-function parseTargetPayload(payload: unknown, issues: PayloadIssue[], path: string): NormalizedTargetPayload {
+function parseTargetPayload(
+  payload: unknown,
+  issues: PayloadIssue[],
+  path: string,
+): NormalizedTargetPayload {
   if (isPayloadVersion(payload)) {
     return {
       isUnversioned: true,
@@ -49,7 +53,10 @@ function parseTargetPayload(payload: unknown, issues: PayloadIssue[], path: stri
   }
 
   if (!isVersionedTargetPayload(payload)) {
-    issues.push({ path, message: "Invalid target payload: expected {schema,...} or {current,...}" });
+    issues.push({
+      path,
+      message: "Invalid target payload: expected {schema,...} or {current,...}",
+    });
     return { isUnversioned: true, currentRef: UNVERSIONED_VERSION_KEY, aliases: {}, versions: {} };
   }
 
@@ -84,7 +91,10 @@ function parseTargetPayload(payload: unknown, issues: PayloadIssue[], path: stri
   };
 }
 
-function mergeSchemaMaps(base: Record<string, Field>, override: Record<string, Field>): Record<string, Field> {
+function mergeSchemaMaps(
+  base: Record<string, Field>,
+  override: Record<string, Field>,
+): Record<string, Field> {
   const out: Record<string, Field> = { ...base };
   for (const [name, overrideField] of Object.entries(override)) {
     const baseField = out[name];
@@ -95,7 +105,9 @@ function mergeSchemaMaps(base: Record<string, Field>, override: Record<string, F
 
 function mergeField(base: Field, override: Field): Field {
   const mergedChecks =
-    base.checks || override.checks ? { ...(base.checks ?? {}), ...(override.checks ?? {}) } : undefined;
+    base.checks || override.checks
+      ? { ...(base.checks ?? {}), ...(override.checks ?? {}) }
+      : undefined;
 
   const mergedPii =
     base.pii || override.pii ? { ...(base.pii ?? {}), ...(override.pii ?? {}) } : undefined;
@@ -196,7 +208,9 @@ function mergeNormalizedTargetPayload(
   const mergedVersions: Record<string, PayloadVersion> = { ...base.versions };
   for (const [key, overrideVersion] of Object.entries(override.versions)) {
     const baseVersion = mergedVersions[key];
-    mergedVersions[key] = baseVersion ? mergePayloadVersion(baseVersion, overrideVersion) : overrideVersion;
+    mergedVersions[key] = baseVersion
+      ? mergePayloadVersion(baseVersion, overrideVersion)
+      : overrideVersion;
   }
 
   return {
@@ -268,7 +282,10 @@ function resolveRefSchema(
 ): Record<string, Field> {
   if (cache.has(versionKey)) return cache.get(versionKey)!;
   if (stack.includes(versionKey)) {
-    issues.push({ path: `${basePath}.${versionKey}.$ref`, message: `Cycle detected in $ref: ${stack.join(" -> ")}` });
+    issues.push({
+      path: `${basePath}.${versionKey}.$ref`,
+      message: `Cycle detected in $ref: ${stack.join(" -> ")}`,
+    });
     return versions[versionKey]?.schema ?? {};
   }
 
@@ -291,8 +308,11 @@ function resolveRefSchema(
         issues.push({ path: refPath, message: `Unknown $ref target '${ref}'` });
       }
     } else {
-      const refKey =
-        versions[ref] ? ref : resolvedAliases[ref] ? resolvedAliases[ref] : resolveAliasOrVersion(ref, versions, resolvedAliases, issues, refPath);
+      const refKey = versions[ref]
+        ? ref
+        : resolvedAliases[ref]
+          ? resolvedAliases[ref]
+          : resolveAliasOrVersion(ref, versions, resolvedAliases, issues, refPath);
       if (refKey && refKey !== versionKey) {
         const baseSchema = resolveRefSchema(
           refKey,
@@ -328,7 +348,10 @@ export function resolveEventPayload(
   const targetsConfig = config.spec.events.payload.targets;
   const allTargets = targetsConfig.all ?? [];
   if (!Array.isArray(allTargets) || allTargets.length === 0) {
-    issues.push({ path: "spec.events.payload.targets.all", message: "Missing or empty targets.all" });
+    issues.push({
+      path: "spec.events.payload.targets.all",
+      message: "Missing or empty targets.all",
+    });
   }
 
   // Normalize to selector map
@@ -558,7 +581,12 @@ export function resolveEventPayload(
     }
 
     // Resolve aliases and current
-    const resolvedAliases = resolveAllAliases(merged.versions, merged.aliases, issues, `payload.${target}.aliases`);
+    const resolvedAliases = resolveAllAliases(
+      merged.versions,
+      merged.aliases,
+      issues,
+      `payload.${target}.aliases`,
+    );
     const currentKey = resolveAliasOrVersion(
       merged.currentRef,
       merged.versions,
