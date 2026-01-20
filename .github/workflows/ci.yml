@@ -20,7 +20,12 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --include=optional
+        run: npm ci
+
+      - name: Ensure Biome binary (Linux)
+        run: |
+          BIOME_VERSION="$(node -p "require('./node_modules/@biomejs/biome/package.json').version")"
+          npm install --no-save --no-package-lock "@biomejs/cli-linux-x64@${BIOME_VERSION}"
 
       - name: Lint
         run: npm run lint
