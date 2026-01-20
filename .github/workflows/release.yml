@@ -40,7 +40,7 @@ jobs:
           bun-version: '1.3.5'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=dev
 
       - name: Build binary
         run: bun build src/cli.ts --compile --target=bun-${{ matrix.target }} --outfile ${{ matrix.artifact }}
