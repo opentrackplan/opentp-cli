@@ -6,7 +6,7 @@
 export interface PatternPart {
   type: "literal" | "variable";
   value: string;
-  transform?: string;
+  transforms?: string[];
 }
 
 /**
@@ -28,15 +28,19 @@ export function parsePattern(pattern: string): PatternPart[] {
 
       const content = pattern.slice(i + 1, end);
 
-      // Check for transform: {name | slug}
-      const pipeIndex = content.indexOf("|");
-      if (pipeIndex !== -1) {
-        const varName = content.slice(0, pipeIndex).trim();
-        const transform = content.slice(pipeIndex + 1).trim();
-        parts.push({ type: "variable", value: varName, transform });
-      } else {
-        parts.push({ type: "variable", value: content.trim() });
+      // Variables optionally support a transform pipeline: {name | slug | truncate160}
+      const tokens = content.split("|").map((t) => t.trim());
+      const varName = tokens[0]?.trim() ?? "";
+      if (!varName) {
+        throw new Error(`Empty variable in pattern: ${pattern}`);
       }
+
+      const transforms = tokens.slice(1).filter(Boolean);
+      parts.push({
+        type: "variable",
+        value: varName,
+        transforms: transforms.length > 0 ? transforms : undefined,
+      });
 
       i = end + 1;
     } else {
@@ -60,6 +64,14 @@ export function parsePattern(pattern: string): PatternPart[] {
  * '{application}/{category}/{name}.yaml' -> regex with named groups
  */
 export function patternToRegex(pattern: string): RegExp {
+  return patternToRegexWithVars(pattern, { segment: false });
+}
+
+export function templateToRegex(template: string): RegExp {
+  return patternToRegexWithVars(template, { segment: true });
+}
+
+function patternToRegexWithVars(pattern: string, opts: { segment: boolean }): RegExp {
   const parts = parsePattern(pattern);
   let regexStr = "^";
 
@@ -69,7 +81,7 @@ export function patternToRegex(pattern: string): RegExp {
       regexStr += escapeRegex(part.value);
     } else {
       // Named capture group for variable
-      regexStr += `(?<${part.value}>.+?)`;
+      regexStr += opts.segment ? `(?<${part.value}>[^/]+?)` : `(?<${part.value}>.+?)`;
     }
   }
 
@@ -88,6 +100,31 @@ export function extractVariables(path: string, pattern: string): Record<string, 
     return null;
   }
 
+  return { ...match.groups };
+}
+
+/**
+ * Extracts variables from a path using a spec template.
+ *
+ * Differences vs extractVariables():
+ * - placeholders must not have transforms
+ * - each placeholder matches a single path segment (does not span '/')
+ */
+export function extractTemplateVariables(
+  path: string,
+  template: string,
+): Record<string, string> | null {
+  const parts = parsePattern(template);
+  for (const part of parts) {
+    if (part.type === "variable" && part.transforms && part.transforms.length > 0) {
+      throw new Error(`Transforms are not allowed in templates: ${template}`);
+    }
+  }
+
+  const regex = templateToRegex(template);
+  const match = path.match(regex);
+
+  if (!match?.groups) return null;
   return { ...match.groups };
 }
 
@@ -114,9 +151,15 @@ export function applyPattern(
         throw new Error(`Variable '${part.value}' not found in variables`);
       }
 
-      // Apply transform if exists
-      if (part.transform && transforms[part.transform]) {
-        value = transforms[part.transform](value);
+      // Apply transforms (pipeline) if configured
+      if (part.transforms) {
+        for (const transformId of part.transforms) {
+          const fn = transforms[transformId];
+          if (!fn) {
+            throw new Error(`Unknown transform '${transformId}' in pattern: ${pattern}`);
+          }
+          value = fn(value);
+        }
       }
 
       result += value;

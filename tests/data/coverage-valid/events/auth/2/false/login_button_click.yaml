@@ -1,4 +1,4 @@
-opentp: 2025-12
+opentp: 2026-01
 
 event:
   key: auth::login_button_click::click::login_button::p2::internal-false
@@ -9,6 +9,7 @@ event:
   taxonomy:
     action: User clicks the login button
     action_detail: "click::login button"
+    custom_id: cid_login_button
 
   payload:
     schema:
@@ -20,6 +21,8 @@ event:
         value: auth
       auth_method:
         value: google
+      tags:
+        value: [auth, login]
       user_id:
         type: string
         pii:

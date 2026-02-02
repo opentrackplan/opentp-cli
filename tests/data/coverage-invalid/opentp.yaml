@@ -1,4 +1,4 @@
-opentp: 2025-12
+opentp: 2026-01
 
 info:
   title: Coverage Fixture (Invalid)
@@ -9,13 +9,25 @@ spec:
   paths:
     events:
       root: /events
-      pattern: "{area}/{priority_level}/{is_internal}/{event}.yaml"
+      template: "{area}/{priority_level}/{is_internal}/{event}.yaml"
     dictionaries:
       root: /dictionaries
 
   events:
     key:
-      pattern: "{area | slug}::{event | slug}::p{priority_level}::internal-{is_internal}"
+      pattern: "^[a-z0-9_]+::[a-z0-9_]+::p[0-9]+::internal-(true|false)$"
+
+    x-opentp:
+      keygen:
+        template: "{area | slug}::{event | slug}::p{priority_level}::internal-{is_internal}"
+        transforms:
+          slug:
+            - lower
+            - trim
+            - replace:
+                from: " "
+                to: "_"
+            - truncate: 160
 
     taxonomy:
       area:
@@ -25,7 +37,7 @@ spec:
         required: true
       priority_level:
         title: Priority Level
-        type: number
+        type: integer
         enum: [1, 2, 3]
         required: true
       is_internal:
@@ -41,13 +53,12 @@ spec:
         title: Action
         type: string
         required: true
-        checks:
-          max-length: 100
+        maxLength: 100
       action_detail:
         title: Action Detail
         type: string
         required: true
-        pattern: "{verb}::{object}"
+        template: "{verb}::{object}"
         fragments:
           verb:
             title: Verb
@@ -61,8 +72,9 @@ spec:
         title: Custom Id
         type: string
         required: false
-        checks:
-          unknown-check: true
+        x-opentp:
+          checks:
+            unknown-check: true
 
     payload:
       targets:
@@ -74,6 +86,7 @@ spec:
           type: string
           dict: data/application_id
           required: true
+          valueRequired: true
         event_name:
           type: string
           required: true
@@ -98,14 +111,4 @@ spec:
         jira:
           type: string
           required: true
-          checks:
-            pattern: "^[A-Z]+-[0-9]+$"
-
-  transforms:
-    slug:
-      - lower
-      - trim
-      - replace:
-          from: " "
-          to: "_"
-      - truncate: 160
+          pattern: "^[A-Z]+-[0-9]+$"

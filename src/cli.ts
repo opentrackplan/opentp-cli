@@ -7,7 +7,7 @@ import {
   findConfigFile,
   getDictsPath,
   getEventsPath,
-  getEventsPattern,
+  getEventsTemplate,
   loadConfig,
 } from "./core/config";
 import { loadDictionaries } from "./core/dict";
@@ -59,6 +59,10 @@ function parseArgs(args: string[]): CliOptions {
       arg === "version"
     ) {
       options.command = arg;
+    } else if (arg === "--help" || arg === "-h") {
+      options.command = "help";
+    } else if (arg === "--version" || arg === "-V") {
+      options.command = "version";
     } else if (arg === "generate") {
       options.command = "generate";
       // Next arg is the generator name (if not a flag)
@@ -218,21 +222,36 @@ async function runValidate(options: CliOptions): Promise<number> {
 
   // 4. Load events
   const eventsPath = getEventsPath(config, root);
-  const eventsPattern = getEventsPattern(config);
+  const eventsTemplate = getEventsTemplate(config);
 
-  if (!eventsPath || !eventsPattern) {
+  if (!eventsPath || !eventsTemplate) {
     logger.error("Events path not configured in opentp.yaml");
     return 1;
   }
 
-  logger.debug({ path: eventsPath, pattern: eventsPattern }, "Loading events");
-  const events = loadEvents(eventsPath, eventsPattern, config);
+  logger.debug({ path: eventsPath, template: eventsTemplate }, "Loading events");
+  const events = loadEvents(eventsPath, eventsTemplate, config);
   logger.debug({ count: events.length }, "Events loaded");
 
   // 5. If fix mode - fix keys
   if (fix) {
+    if (!config.spec.events["x-opentp"]?.keygen) {
+      logger.error(
+        "Key generation is not configured. Add spec.events.x-opentp.keygen to opentp.yaml to use 'opentp fix'.",
+      );
+      return 1;
+    }
+
     let fixed = 0;
     for (const event of events) {
+      if (typeof event.expectedKey !== "string") {
+        logger.error(
+          { file: event.relativePath },
+          "Expected key could not be generated (check spec.events.x-opentp.keygen.template and transforms)",
+        );
+        continue;
+      }
+
       if (event.key !== event.expectedKey) {
         try {
           const eventFile = loadYaml<EventFile>(event.filePath);
@@ -318,14 +337,14 @@ async function _runExport(options: CliOptions): Promise<number> {
     ? loadDictionaries(dictsPath, config.opentp).dictionaries
     : new Map();
   const eventsPath = getEventsPath(config, root);
-  const eventsPattern = getEventsPattern(config);
+  const eventsTemplate = getEventsTemplate(config);
 
-  if (!eventsPath || !eventsPattern) {
+  if (!eventsPath || !eventsTemplate) {
     logger.error("Events path not configured");
     return 1;
   }
 
-  const events = loadEvents(eventsPath, eventsPattern, config);
+  const events = loadEvents(eventsPath, eventsTemplate, config);
   logger.debug({ count: events.length }, "Exporting events");
 
   // Export
@@ -405,14 +424,14 @@ async function runGenerate(options: CliOptions): Promise<number> {
     ? loadDictionaries(dictsPath, config.opentp).dictionaries
     : new Map();
   const eventsPath = getEventsPath(config, root);
-  const eventsPattern = getEventsPattern(config);
+  const eventsTemplate = getEventsTemplate(config);
 
-  if (!eventsPath || !eventsPattern) {
+  if (!eventsPath || !eventsTemplate) {
     logger.error("Events path not configured");
     return 1;
   }
 
-  const events = loadEvents(eventsPath, eventsPattern, config);
+  const events = loadEvents(eventsPath, eventsTemplate, config);
   logger.debug({ count: events.length }, "Events loaded");
 
   // Run generator

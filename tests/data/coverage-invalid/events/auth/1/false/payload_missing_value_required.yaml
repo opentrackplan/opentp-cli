@@ -1,0 +1,18 @@
+opentp: 2026-01
+
+event:
+  key: auth::payload_missing_value_required::p1::internal-false
+
+  taxonomy:
+    action: Payload does not define a required fixed value
+    action_detail: "test::payload"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          type: string
+        event_name:
+          value: payload_missing_value_required
+        event_category:
+          value: auth

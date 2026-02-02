@@ -32,7 +32,7 @@ export function loadConfig(filePath: string): OpenTPConfig {
   // Spec version format: YYYY-MM (valid month)
   if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(config.opentp)) {
     throw new Error(
-      `Invalid spec version '${config.opentp}'. Expected format YYYY-MM (e.g., 2025-12)`,
+      `Invalid spec version '${config.opentp}'. Expected format YYYY-MM (e.g., 2026-01)`,
     );
   }
 
@@ -71,16 +71,12 @@ export function loadConfig(filePath: string): OpenTPConfig {
     throw new Error("Missing required field: spec.paths.events.root");
   }
 
-  if (!config.spec.paths.events.pattern) {
-    throw new Error("Missing required field: spec.paths.events.pattern");
+  if (!config.spec.paths.events.template) {
+    throw new Error("Missing required field: spec.paths.events.template");
   }
 
   if (!config.spec.events) {
     throw new Error("Missing required field: spec.events");
-  }
-
-  if (!config.spec.events.key?.pattern) {
-    throw new Error("Missing required field: spec.events.key.pattern");
   }
 
   if (!config.spec.events.taxonomy) {
@@ -136,8 +132,8 @@ export function getDictsPath(config: OpenTPConfig, rootPath: string): string | n
 }
 
 /**
- * Gets pattern for event files
+ * Gets template for event files
  */
-export function getEventsPattern(config: OpenTPConfig): string | null {
-  return config.spec.paths.events.pattern;
+export function getEventsTemplate(config: OpenTPConfig): string | null {
+  return config.spec.paths.events.template;
 }

@@ -21,6 +21,7 @@ opentp validate [options]
 |--------|-------------|
 | `--root <path>` | Project root directory |
 | `--verbose` | Show detailed output |
+| `--json` | Output results as JSON |
 | `--external-rules <path>` | Load custom validation checks |
 | `--external-transforms <path>` | Load custom transforms |
 
@@ -64,10 +65,11 @@ Loads additional validation checks from the specified directory.
 
 The validator performs these checks:
 
-1. **Key validation** — event keys match the configured pattern
-2. **Taxonomy validation** — required fields + dict/enum + checks
-3. **Payload validation** — targets/versioning merge + required fields + dict/enum + checks + PII
-4. **Path extraction** — taxonomy variables extracted from file paths (based on the configured pattern)
+1. **Key validation** — `event.key` is required; optional constraints via `spec.events.key`; optional expected-key check if `spec.events.x-opentp.keygen` is configured
+2. **Uniqueness** — event keys must be unique across the plan
+3. **Taxonomy validation** — required fields + dict/enum + JSON-Schema-like constraints + `x-opentp.checks`
+4. **Payload validation** — target selector resolution + versioning (`aliases`, `$ref`) + merge semantics + constraints + `x-opentp.checks` + PII
+5. **Path extraction** — taxonomy variables extracted from file paths (based on `spec.paths.events.template`)
 
 ## Error Output
 

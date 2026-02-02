@@ -1,15 +1,18 @@
-opentp: 2025-12
+opentp: 2026-01
 
 event:
   key: auth::payload_missing_required::p1::internal-false
 
   taxonomy:
-    action: Payload schema is missing a required field
+    action: Payload attempts to weaken a required field
     action_detail: "test::payload"
 
   payload:
     web:
       schema:
+        application_id:
+          value: web-app
+          required: false
         event_name:
           value: payload_missing_required
         event_category:

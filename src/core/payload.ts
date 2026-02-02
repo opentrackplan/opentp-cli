@@ -91,32 +91,95 @@ function parseTargetPayload(
   };
 }
 
-function mergeSchemaMaps(
+export function mergeSchemaMaps(
   base: Record<string, Field>,
   override: Record<string, Field>,
+  issues?: PayloadIssue[],
+  basePath?: string,
 ): Record<string, Field> {
   const out: Record<string, Field> = { ...base };
   for (const [name, overrideField] of Object.entries(override)) {
     const baseField = out[name];
-    out[name] = baseField ? mergeField(baseField, overrideField) : overrideField;
+    if (baseField) {
+      if (issues && basePath) {
+        checkFieldMergeConflicts(baseField, overrideField, issues, `${basePath}.schema.${name}`);
+      }
+      out[name] = mergeField(baseField, overrideField);
+    } else {
+      out[name] = overrideField;
+    }
   }
   return out;
 }
 
-function mergeField(base: Field, override: Field): Field {
-  const mergedChecks =
-    base.checks || override.checks
-      ? { ...(base.checks ?? {}), ...(override.checks ?? {}) }
-      : undefined;
+function checkFieldMergeConflicts(
+  base: Field,
+  override: Field,
+  issues: PayloadIssue[],
+  fieldPath: string,
+): void {
+  if (base.type && override.type && base.type !== override.type) {
+    issues.push({
+      path: fieldPath,
+      message: `Field type conflict: base '${base.type}' vs override '${override.type}'`,
+    });
+  }
 
+  if (base.required === true && override.required === false) {
+    issues.push({
+      path: fieldPath,
+      message: "Cannot weaken required field (base required=true, override required=false)",
+    });
+  }
+
+  if (base.valueRequired === true && override.valueRequired === false) {
+    issues.push({
+      path: fieldPath,
+      message:
+        "Cannot weaken valueRequired field (base valueRequired=true, override valueRequired=false)",
+    });
+  }
+
+  if (base.valueRequired === true && override.required === false) {
+    issues.push({
+      path: fieldPath,
+      message:
+        "Cannot set required=false when base valueRequired=true (valueRequired implies required=true)",
+    });
+  }
+
+  if (override.valueRequired === true && override.required === false) {
+    issues.push({
+      path: fieldPath,
+      message:
+        "Invalid field: valueRequired=true implies required=true (required=false is not allowed)",
+    });
+  }
+}
+
+export function mergeField(base: Field, override: Field): Field {
   const mergedPii =
     base.pii || override.pii ? { ...(base.pii ?? {}), ...(override.pii ?? {}) } : undefined;
+
+  const baseX = base["x-opentp"];
+  const overrideX = override["x-opentp"];
+  const mergedX =
+    baseX || overrideX
+      ? {
+          ...(baseX ?? {}),
+          ...(overrideX ?? {}),
+          checks:
+            baseX?.checks || overrideX?.checks
+              ? { ...(baseX?.checks ?? {}), ...(overrideX?.checks ?? {}) }
+              : undefined,
+        }
+      : undefined;
 
   const merged: Field = {
     ...base,
     ...override,
-    checks: mergedChecks,
     pii: mergedPii,
+    "x-opentp": mergedX,
   };
 
   const overrideHasValue = override.value !== undefined;
@@ -135,97 +198,6 @@ function mergeField(base: Field, override: Field): Field {
   }
 
   return merged;
-}
-
-function mergePayloadVersion(base: PayloadVersion, override: PayloadVersion): PayloadVersion {
-  return {
-    $ref: override.$ref ?? base.$ref,
-    meta: override.meta ?? base.meta,
-    schema: mergeSchemaMaps(base.schema, override.schema),
-  };
-}
-
-function mergeNormalizedTargetPayload(
-  base: NormalizedTargetPayload,
-  override: NormalizedTargetPayload,
-): NormalizedTargetPayload {
-  // Both unversioned: simple merge
-  if (base.isUnversioned && override.isUnversioned) {
-    const baseV = base.versions[UNVERSIONED_VERSION_KEY];
-    const overrideV = override.versions[UNVERSIONED_VERSION_KEY];
-    if (!baseV) return override;
-    if (!overrideV) return base;
-
-    return {
-      isUnversioned: true,
-      currentRef: UNVERSIONED_VERSION_KEY,
-      aliases: {},
-      versions: {
-        [UNVERSIONED_VERSION_KEY]: mergePayloadVersion(baseV, overrideV),
-      },
-    };
-  }
-
-  // Base unversioned overlays every override version (base is broader)
-  if (base.isUnversioned && !override.isUnversioned) {
-    const overlay = base.versions[UNVERSIONED_VERSION_KEY];
-    if (!overlay) return override;
-
-    const mergedVersions: Record<string, PayloadVersion> = {};
-    for (const [key, version] of Object.entries(override.versions)) {
-      mergedVersions[key] = {
-        ...version,
-        schema: mergeSchemaMaps(overlay.schema, version.schema),
-      };
-    }
-
-    return {
-      ...override,
-      versions: mergedVersions,
-    };
-  }
-
-  // Override unversioned overlays every base version (override is narrower/more specific)
-  if (!base.isUnversioned && override.isUnversioned) {
-    const overlay = override.versions[UNVERSIONED_VERSION_KEY];
-    if (!overlay) return base;
-
-    const mergedVersions: Record<string, PayloadVersion> = {};
-    for (const [key, version] of Object.entries(base.versions)) {
-      mergedVersions[key] = {
-        ...version,
-        schema: mergeSchemaMaps(version.schema, overlay.schema),
-      };
-    }
-
-    return {
-      ...base,
-      versions: mergedVersions,
-    };
-  }
-
-  // Both versioned: merge versions and aliases; override current wins
-  const mergedVersions: Record<string, PayloadVersion> = { ...base.versions };
-  for (const [key, overrideVersion] of Object.entries(override.versions)) {
-    const baseVersion = mergedVersions[key];
-    mergedVersions[key] = baseVersion
-      ? mergePayloadVersion(baseVersion, overrideVersion)
-      : overrideVersion;
-  }
-
-  return {
-    isUnversioned: false,
-    currentRef: override.currentRef,
-    aliases: { ...base.aliases, ...override.aliases },
-    versions: mergedVersions,
-  };
-}
-
-function isSubset(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  for (const x of a) {
-    if (!b.has(x)) return false;
-  }
-  return true;
 }
 
 function resolveAliasOrVersion(
@@ -303,7 +275,7 @@ function resolveRefSchema(
     if (ref.includes("::")) {
       const externalSchema = resolveExternalSchema?.(ref, refPath);
       if (externalSchema) {
-        schema = mergeSchemaMaps(externalSchema, schema);
+        schema = mergeSchemaMaps(externalSchema, schema, issues, `${basePath}.${versionKey}`);
       } else if (!resolveExternalSchema) {
         issues.push({ path: refPath, message: `Unknown $ref target '${ref}'` });
       }
@@ -324,7 +296,7 @@ function resolveRefSchema(
           basePath,
           resolveExternalSchema,
         );
-        schema = mergeSchemaMaps(baseSchema, schema);
+        schema = mergeSchemaMaps(baseSchema, schema, issues, `${basePath}.${versionKey}`);
       } else if (!refKey) {
         issues.push({ path: refPath, message: `Unknown $ref target '${ref}'` });
       }
@@ -353,6 +325,7 @@ export function resolveEventPayload(
       message: "Missing or empty targets.all",
     });
   }
+  const allTargetSet = new Set(allTargets);
 
   // Normalize to selector map
   const selectorMap: Record<string, TargetPayload> = {};
@@ -378,14 +351,12 @@ export function resolveEventPayload(
   // Parse selectors
   const selectors: Array<{
     name: string;
-    index: number;
     targets: ReadonlySet<string>;
     payload: NormalizedTargetPayload;
   }> = [];
 
   const selectorPayloads: Record<string, NormalizedTargetPayload> = {};
 
-  let selectorIndex = 0;
   for (const [selectorName, selectorPayload] of Object.entries(selectorMap)) {
     const parsedPayload = parseTargetPayload(selectorPayload, issues, `payload.${selectorName}`);
     selectorPayloads[selectorName] = parsedPayload;
@@ -400,13 +371,11 @@ export function resolveEventPayload(
         path: `payload.${selectorName}`,
         message: `Unknown target selector '${selectorName}'. Define it in spec.events.payload.targets or include it in targets.all.`,
       });
-      selectorIndex++;
       continue;
     }
 
     selectors.push({
       name: selectorName,
-      index: selectorIndex++,
       targets: new Set(selectorTargets),
       payload: parsedPayload,
     });
@@ -517,7 +486,12 @@ export function resolveEventPayload(
           const resolvedKey = `${resolved.selector}::${resolved.versionKey}`;
           if (resolvedKey !== cacheKey) {
             const baseSchema = resolveSelectorSchema(resolved.selector, resolved.versionKey, stack);
-            schema = mergeSchemaMaps(baseSchema, schema);
+            schema = mergeSchemaMaps(
+              baseSchema,
+              schema,
+              issues,
+              `payload.${selector}.${versionKey}`,
+            );
           }
         }
       }
@@ -549,50 +523,45 @@ export function resolveEventPayload(
 
   const resolvedTargets: Record<string, ResolvedTargetPayload> = {};
 
-  for (const target of allTargets) {
-    const applicable = selectors.filter((s) => s.targets.has(target));
-    if (applicable.length === 0) continue; // event not defined for this target
-
-    // Ambiguity check: selectors should form a subset chain for this target
-    for (let i = 0; i < applicable.length; i++) {
-      for (let j = i + 1; j < applicable.length; j++) {
-        const a = applicable[i];
-        const b = applicable[j];
-        if (!(isSubset(a.targets, b.targets) || isSubset(b.targets, a.targets))) {
-          issues.push({
-            path: `payload.${target}`,
-            message: `Ambiguous selectors for '${target}': '${a.name}' and '${b.name}' overlap without subset relation`,
-          });
-        }
+  // No-overlap rule: each target may be covered at most once.
+  const targetToSelector = new Map<string, string>();
+  for (const selector of selectors) {
+    for (const target of selector.targets) {
+      if (!allTargetSet.has(target)) continue;
+      const prev = targetToSelector.get(target);
+      if (prev) {
+        issues.push({
+          path: `payload.${target}`,
+          message: `Target '${target}' is covered by both '${prev}' and '${selector.name}'. Each target must be covered at most once.`,
+        });
+        continue;
       }
+      targetToSelector.set(target, selector.name);
     }
+  }
 
-    // Sort broad -> narrow (larger target set first). Same-size tie-breaker: file order.
-    applicable.sort((a, b) => {
-      const bySize = b.targets.size - a.targets.size;
-      if (bySize !== 0) return bySize;
-      return a.index - b.index;
-    });
+  for (const target of allTargets) {
+    const selectorName = targetToSelector.get(target);
+    if (!selectorName) continue;
 
-    // Merge selector payloads
-    let merged = applicable[0].payload;
-    for (let i = 1; i < applicable.length; i++) {
-      merged = mergeNormalizedTargetPayload(merged, applicable[i].payload);
-    }
+    const selected = selectorPayloads[selectorName];
+    if (!selected) continue;
 
-    // Resolve aliases and current
+    // Resolve aliases and current for the selected payload key
+    const basePath = `payload.${selectorName}`;
     const resolvedAliases = resolveAllAliases(
-      merged.versions,
-      merged.aliases,
+      selected.versions,
+      selected.aliases,
       issues,
-      `payload.${target}.aliases`,
+      `${basePath}.aliases`,
     );
+
     const currentKey = resolveAliasOrVersion(
-      merged.currentRef,
-      merged.versions,
-      { ...merged.aliases, ...resolvedAliases },
+      selected.currentRef,
+      selected.versions,
+      { ...selected.aliases, ...resolvedAliases },
       issues,
-      `payload.${target}.current`,
+      `${basePath}.current`,
     );
 
     if (!currentKey) continue;
@@ -601,15 +570,15 @@ export function resolveEventPayload(
     const cache = new Map<string, Record<string, Field>>();
     const resolvedVersions: Record<string, ResolvedPayloadVersion> = {};
 
-    for (const [versionKey, version] of Object.entries(merged.versions)) {
+    for (const [versionKey, version] of Object.entries(selected.versions)) {
       const schema = resolveRefSchema(
         versionKey,
-        merged.versions,
+        selected.versions,
         resolvedAliases,
         issues,
         [],
         cache,
-        `payload.${target}`,
+        basePath,
         resolveExternalSchema,
       );
       resolvedVersions[versionKey] = {

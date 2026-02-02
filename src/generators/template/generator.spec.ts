@@ -7,15 +7,16 @@ import { templateGenerator } from "./index";
 
 const mockContext: GeneratorContext = {
   config: {
-    opentp: "2025-12",
+    opentp: "2026-01",
     info: {
       title: "Test App",
       version: "1.0.0",
     },
     spec: {
+      paths: {
+        events: { root: "/events", template: "{area}/{event}.yaml" },
+      },
       events: {
-        key: { pattern: "{app}::{name}" },
-        paths: {},
         taxonomy: {},
         payload: { targets: { all: [] }, schema: {} },
       },
@@ -26,20 +27,20 @@ const mockContext: GeneratorContext = {
       filePath: "/test/events/app/login.yaml",
       relativePath: "app/login.yaml",
       key: "app::login",
-      expectedKey: "app::login",
+      expectedKey: null,
       taxonomy: { app: "myapp", name: "login" },
       lifecycle: { status: "active" },
       ignore: [],
-      payload: { targets: {} },
+      payload: { schema: {} },
     },
     {
       filePath: "/test/events/app/logout.yaml",
       relativePath: "app/logout.yaml",
       key: "app::logout",
-      expectedKey: "app::logout",
+      expectedKey: null,
       taxonomy: { app: "myapp", name: "logout" },
       ignore: [],
-      payload: { targets: {} },
+      payload: { schema: {} },
     },
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),

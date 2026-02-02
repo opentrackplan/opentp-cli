@@ -1,7 +1,7 @@
 {
   "name": "opentp",
-  "version": "0.6.2",
-  "specVersion": "2025-12",
+  "version": "0.7.0",
+  "specVersion": "2026-01",
   "description": "OpenTrackPlan CLI - validate and generate analytics tracking plans",
   "type": "module",
   "main": "dist/index.cjs",

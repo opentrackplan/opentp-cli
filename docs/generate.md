@@ -19,8 +19,8 @@ opentp generate <target> [options]
 
 | Target | Description | Output |
 |--------|-------------|--------|
-| `json` | JSON export | `opentp.events.json` |
-| `yaml` | YAML export | `opentp.events.yaml` |
+| `json` | JSON export | stdout (or `--output <file>`) |
+| `yaml` | YAML export | stdout (or `--output <file>`) |
 | `template` | Custom template | Configured output |
 
 ## Options
@@ -29,6 +29,8 @@ opentp generate <target> [options]
 |--------|-------------|
 | `--root <path>` | Project root directory |
 | `--output <path>` | Output file path |
+| `--pretty / --no-pretty` | Pretty print output (JSON generator; default: true) |
+| `--file <path>` | Template file path (template generator) |
 | `--external-generators <path>` | Load custom generators |
 
 ## Examples
@@ -39,7 +41,7 @@ opentp generate <target> [options]
 opentp generate json
 ```
 
-Creates `opentp.events.json` with all events.
+Prints JSON to stdout. Use `--output` to write a file.
 
 ### Export to YAML
 
@@ -47,7 +49,7 @@ Creates `opentp.events.json` with all events.
 opentp generate yaml
 ```
 
-Creates `opentp.events.yaml` with all events.
+Prints YAML to stdout. Use `--output` to write a file.
 
 ### Custom output path
 
@@ -69,7 +71,7 @@ External generators are loaded only via `--external-generators` (the spec does n
 
 ```json
 {
-  "opentp": "2025-12",
+  "opentp": "2026-01",
   "info": {
     "title": "My App Tracking Plan",
     "version": "1.0.0"
@@ -97,7 +99,7 @@ External generators are loaded only via `--external-generators` (the spec does n
 ### YAML Output
 
 ```yaml
-opentp: 2025-12
+opentp: 2026-01
 info:
   title: My App Tracking Plan
   version: 1.0.0

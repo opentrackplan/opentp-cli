@@ -7,7 +7,7 @@ sidebar:
 
 # opentp fix
 
-Automatically fixes event keys based on taxonomy values and the configured key pattern.
+Automatically fixes event keys based on taxonomy values and the configured key generator (`spec.events.x-opentp.keygen`).
 
 ## Usage
 
@@ -21,7 +21,7 @@ opentp fix [options]
 |--------|-------------|
 | `--root <path>` | Project root directory |
 | `--verbose` | Show detailed output |
-| `--dry-run` | Show what would be fixed without making changes |
+| `--external-transforms <path>` | Load custom transforms (can be repeated) |
 
 ## Examples
 
@@ -40,19 +40,11 @@ Fixed 3 events:
   events/onboarding/step.yaml: step_complete → onboarding::step_complete
 ```
 
-### Dry run
-
-```bash
-opentp fix --dry-run
-```
-
-Shows what would be fixed without modifying files.
-
 ## How It Works
 
 1. Reads each event file
 2. Extracts taxonomy values (area, event, etc.)
-3. Applies configured transforms to generate the expected key
+3. Applies `spec.events.x-opentp.keygen.template` + transforms to generate the expected key
 4. If the current key doesn't match, updates the file
 
 ### Example
@@ -63,14 +55,15 @@ Given this configuration:
 # opentp.yaml
 spec:
   events:
-    key:
-      pattern: "{area | slug}::{event | slug}"
-  transforms:
-    slug:
-      - lower
-      - replace:
-          from: " "
-          to: "_"
+    x-opentp:
+      keygen:
+        template: "{area | slug}::{event | slug}"
+        transforms:
+          slug:
+            - lower
+            - replace:
+                from: " "
+                to: "_"
 ```
 
 And this event:

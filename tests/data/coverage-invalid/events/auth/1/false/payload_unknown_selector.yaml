@@ -1,4 +1,4 @@
-opentp: 2025-12
+opentp: 2026-01
 
 event:
   key: auth::payload_unknown_selector::p1::internal-false

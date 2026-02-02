@@ -1,17 +1,45 @@
 ---
-title: Validation Checks
-description: Field validation checks for enforcing constraints.
+title: Constraints & Rules
+description: Portable JSON-Schema-like constraints, plus optional opentp-cli checks.
 sidebar:
   order: 6
 ---
 
-# Validation Checks
+# Constraints & Rules
 
-Checks validate field values in taxonomy and payload definitions.
+OpenTrackPlan `2026-01` standardizes JSON-Schema-like constraints on fields (e.g. `minLength`, `maximum`, `pattern`).
 
-## Using Checks
+`opentp-cli` also supports additional validation via the `x-opentp.checks` extension. These checks are implemented by the CLI (built-in rules + external rules loaded via `--external-rules`).
 
-Add checks to field definitions:
+## Pinned values per event (`valueRequired`)
+
+Use `valueRequired: true` when a field must be pinned to a single constant per event (for example `application_id`).
+
+`valueRequired: true` implies `required: true` (tooling should treat `required: false` together with `valueRequired: true` as invalid).
+
+```yaml
+# opentp.yaml
+spec:
+  events:
+    payload:
+      schema:
+        application_id:
+          type: string
+          dict: data/application_id
+          valueRequired: true
+```
+
+```yaml
+# events/auth/login.yaml
+payload:
+  schema:
+    application_id:
+      value: web-app
+```
+
+## Using Constraints (portable)
+
+Use constraints directly on fields in taxonomy and payload schemas:
 
 ```yaml
 # opentp.yaml
@@ -20,13 +48,10 @@ spec:
     taxonomy:
       area:
         type: string
-        checks:
-          max-length: 50
-          pattern: "^[a-z_]+$"
-          not-empty: true
+        minLength: 1
+        maxLength: 50
+        pattern: "^[a-z_]+$"
 ```
-
-Checks can also be applied in event payload schemas:
 
 ```yaml
 # events/auth/login.yaml
@@ -34,124 +59,42 @@ payload:
   schema:
     user_id:
       type: string
+      minLength: 1
+      maxLength: 100
+```
+
+## Using `x-opentp.checks` (opentp-cli extension)
+
+Add checks under `x-opentp.checks`:
+
+```yaml
+taxonomy:
+  company_id:
+    type: string
+    x-opentp:
       checks:
-        min-length: 1
-        max-length: 100
+        starts-with: "COMP-"
 ```
 
-## Built-in Checks
+Built-in `x-opentp.checks` in `opentp-cli`:
 
-### max-length
-
-Maximum string length.
-
-```yaml
-checks:
-  max-length: 50
-```
-
-| Value | Params | Result |
-|-------|--------|--------|
-| `hello` | `50` | Valid |
-| `hello...` (60 chars) | `50` | Invalid |
-
-### min-length
-
-Minimum string length.
-
-```yaml
-checks:
-  min-length: 3
-```
-
-| Value | Params | Result |
-|-------|--------|--------|
-| `hello` | `3` | Valid |
-| `hi` | `3` | Invalid |
-
-### pattern
-
-Match a regular expression.
-
-```yaml
-checks:
-  pattern: "^[a-z_]+$"
-```
-
-| Value | Pattern | Result |
-|-------|---------|--------|
-| `hello_world` | `^[a-z_]+$` | Valid |
-| `Hello World` | `^[a-z_]+$` | Invalid |
-
-### not-empty
-
-Value must not be empty.
-
-```yaml
-checks:
-  not-empty: true
-```
-
-| Value | Result |
-|-------|--------|
-| `hello` | Valid |
-| `` | Invalid |
-| `   ` | Invalid (whitespace only) |
-
-### starts-with
-
-Value must start with a prefix.
-
-```yaml
-checks:
-  starts-with: "app_"
-```
-
-| Value | Params | Result |
-|-------|--------|--------|
-| `app_login` | `app_` | Valid |
-| `login` | `app_` | Invalid |
-
-### ends-with
-
-Value must end with a suffix.
-
-```yaml
-checks:
-  ends-with: "_event"
-```
-
-| Value | Params | Result |
-|-------|--------|--------|
-| `login_event` | `_event` | Valid |
-| `login` | `_event` | Invalid |
-
-### contains
-
-Value must contain a substring.
-
-```yaml
-checks:
-  contains: "_"
-```
-
-| Value | Params | Result |
-|-------|--------|--------|
-| `hello_world` | `_` | Valid |
-| `helloworld` | `_` | Invalid |
+- `max-length`, `min-length`, `pattern`
+- `starts-with`, `ends-with`, `contains`, `not-empty`
+- `webhook`
 
 ### webhook
 
 Validate against an external API.
 
 ```yaml
-checks:
-  webhook:
-    url: https://api.company.com/validate
-    headers:
-      Authorization: "Bearer ${API_KEY}"
-    timeout: 5000
-    retries: 2
+x-opentp:
+  checks:
+    webhook:
+      url: https://api.company.com/validate
+      headers:
+        Authorization: "Bearer ${API_KEY}"
+      timeout: 5000
+      retries: 2
 ```
 
 #### Webhook Parameters
@@ -179,23 +122,23 @@ webhook:
 The webhook should return JSON:
 
 ```json
-// Valid
 { "valid": true }
+```
 
-// Invalid
+```json
 { "valid": false, "error": "Company ID not found" }
 ```
 
-## Combining Checks
+## Combining `x-opentp.checks`
 
 Multiple checks are evaluated in order:
 
 ```yaml
-checks:
-  not-empty: true
-  min-length: 3
-  max-length: 50
-  pattern: "^[a-z_]+$"
+x-opentp:
+  checks:
+    not-empty: true
+    starts-with: "app_"
+    contains: "_"
 ```
 
 All checks must pass for the value to be valid.
@@ -207,22 +150,16 @@ Create custom validation checks in JavaScript:
 ```javascript
 // my-rules/company-id/index.js
 module.exports = {
-  name: 'company-id',
+  name: "company-id",
   validate: (value, params, context) => {
-    if (!value.startsWith('COMP-')) {
+    if (!value.startsWith("COMP-")) {
       return {
         valid: false,
-        error: 'Must start with COMP-'
-      };
-    }
-    if (value.length !== 12) {
-      return {
-        valid: false,
-        error: 'Must be exactly 12 characters'
+        error: "Must start with COMP-",
       };
     }
     return { valid: true };
-  }
+  },
 };
 ```
 
@@ -232,8 +169,9 @@ Use in your tracking plan:
 taxonomy:
   company:
     type: string
-    checks:
-      company-id: true
+    x-opentp:
+      checks:
+        company-id: true
 ```
 
 Load with CLI:

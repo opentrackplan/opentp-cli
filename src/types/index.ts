@@ -4,13 +4,44 @@
 // OpenTP spec version (format: YYYY-MM)
 export type Version = string;
 
+export type StringFormat = "date" | "date-time" | "email" | "uuid" | "uri" | "ipv4" | "ipv6";
+
 // === Dictionary ===
 export interface Dict {
   opentp?: Version;
   dict: {
-    type: "string" | "number" | "boolean";
-    values: (string | number | boolean)[];
+    type: "string" | "number" | "integer" | "boolean";
+    values: Array<string | number | boolean>;
   };
+}
+
+// === x-opentp Extensions ===
+export interface XOpentpFieldExtensions {
+  /** Field role hint for tooling (does not affect schema validation). */
+  role?: "constant" | "attribute" | "shared";
+  /** Tooling-defined validation checks (non-portable). */
+  checks?: Record<string, unknown>;
+}
+
+export type ScalarType = "string" | "number" | "integer" | "boolean";
+
+export interface ArrayItems {
+  type: ScalarType;
+  enum?: Array<string | number | boolean>;
+  dict?: string;
+
+  // String constraints
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: StringFormat;
+
+  // Number constraints
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
 }
 
 // === Field ===
@@ -24,40 +55,81 @@ export interface Field {
     /** Reserved: masker implementation id (tool-defined values; built-in: 'star') */
     masker?: string;
   };
+
   // Schema (for generators)
-  type?: "string" | "number" | "boolean";
-  enum?: (string | number | boolean)[]; // inline values
+  type?: ScalarType | "array";
+  enum?: Array<string | number | boolean>; // inline values
   dict?: string; // reference to dictionary file
   required?: boolean;
-  value?: string | number | boolean; // fixed value
-  // Validation checks
-  checks?: Record<string, unknown>;
+  valueRequired?: boolean;
+  value?: string | number | boolean | Array<string | number | boolean>; // fixed value
+
+  // String constraints
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: StringFormat;
+
+  // Number constraints
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
+
+  // Array constraints (arrays of scalar items only)
+  items?: ArrayItems;
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
+
+  // Tooling extensions
+  "x-opentp"?: XOpentpFieldExtensions;
 }
 
 // === Taxonomy Field (in opentp.yaml) ===
 export interface TaxonomyField {
   title: string;
   description?: string;
-  type: "string" | "number" | "boolean";
+  type: ScalarType;
   required?: boolean;
-  pattern?: string;
-  enum?: (string | number | boolean)[]; // inline values
-  dict?: string; // reference to dictionary file
-  checks?: Record<string, unknown>;
+
+  // Composite fields
+  template?: string;
   fragments?: Record<string, TaxonomyField>;
+
+  // Inline values
+  enum?: Array<string | number | boolean>; // inline values
+  dict?: string; // reference to dictionary file
+
+  // String constraints
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: StringFormat;
+
+  // Number constraints
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
+
+  // Tooling extensions
+  "x-opentp"?: XOpentpFieldExtensions;
 }
 
 // === Paths Config ===
 export interface EventsPathConfig {
   root: string;
-  pattern: string;
+  template: string;
 }
 
 export interface DictionariesPathConfig {
   root: string;
 }
 
-// === Transforms (opentp.yaml) ===
+// === Transforms (x-opentp keygen) ===
 export type TransformStepConfig = string | Record<string, unknown>;
 export type TransformPipelineConfig = TransformStepConfig[];
 
@@ -68,23 +140,67 @@ export interface PiiReservedFieldConfig {
   required?: boolean;
   enum?: string[];
   dict?: string;
-  checks?: Record<string, unknown>;
+
+  // String constraints
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: StringFormat;
+
+  "x-opentp"?: XOpentpFieldExtensions;
 }
 
 export interface PiiMetaFieldConfig {
   title?: string;
   description?: string;
-  type: "string" | "number" | "boolean";
+  type: ScalarType;
   required?: boolean;
-  enum?: (string | number | boolean)[];
+  enum?: Array<string | number | boolean>;
   dict?: string;
-  checks?: Record<string, unknown>;
+
+  // String constraints
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: StringFormat;
+
+  // Number constraints
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
+
+  "x-opentp"?: XOpentpFieldExtensions;
 }
 
 export interface PiiConfig {
   kind?: PiiReservedFieldConfig;
   masker?: PiiReservedFieldConfig;
   schema?: Record<string, PiiMetaFieldConfig>;
+}
+
+// === Event Key Constraints (opentp.yaml) ===
+export interface EventKeyConstraints {
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: StringFormat;
+}
+
+export interface XOpentpKeygenConfig {
+  template: string;
+  transforms?: Record<string, TransformPipelineConfig>;
+}
+
+export interface XOpentpEventsExtensions {
+  keygen?: XOpentpKeygenConfig;
+}
+
+export interface TargetConfig {
+  title?: string;
+  description?: string;
+  schema?: Record<string, Field>;
 }
 
 // === OpenTP Config (opentp.yaml) ===
@@ -101,10 +217,10 @@ export interface OpenTPConfig {
       events: EventsPathConfig;
       dictionaries?: DictionariesPathConfig;
     };
+    targets?: Record<string, TargetConfig>;
     events: {
-      key: {
-        pattern: string;
-      };
+      key?: EventKeyConstraints;
+      "x-opentp"?: XOpentpEventsExtensions;
       taxonomy: Record<string, TaxonomyField>;
       payload: {
         targets: Record<string, string[]>;
@@ -112,7 +228,6 @@ export interface OpenTPConfig {
       };
       pii?: PiiConfig;
     };
-    transforms?: Record<string, TransformPipelineConfig>;
   };
 }
 
@@ -200,7 +315,7 @@ export interface ResolvedEvent {
   relativePath: string;
   opentp?: Version;
   key: string;
-  expectedKey: string;
+  expectedKey: string | null;
   taxonomy: Record<string, unknown>;
   lifecycle?: EventLifecycle;
   aliases?: EventAlias[];

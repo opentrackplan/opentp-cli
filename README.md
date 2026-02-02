@@ -22,7 +22,7 @@ Analytics tracking is broken:
 
 ```yaml
 # events/auth/login_button_click.yaml
-opentp: 2025-12
+opentp: 2026-01
 
 event:
   key: auth::login_button_click
@@ -67,7 +67,7 @@ npx opentp validate
 ### 1. Create `opentp.yaml`
 
 ```yaml
-opentp: 2025-12
+opentp: 2026-01
 
 info:
   title: My App Tracking Plan
@@ -77,13 +77,27 @@ spec:
   paths:
     events:
       root: /events
-      pattern: "{area}/{event}.yaml"
+      template: "{area}/{event}.yaml"
     dictionaries:
       root: /dictionaries
 
   events:
     key:
-      pattern: "{area | slug}::{event | slug}"
+      minLength: 3
+      maxLength: 160
+      pattern: "^[a-z0-9_]+::[a-z0-9_]+$"
+
+    x-opentp:
+      keygen:
+        template: "{area | slug}::{event | slug}"
+        transforms:
+          slug:
+            - lower
+            - trim
+            - replace:
+                from: " "
+                to: "_"
+            - truncate: 160
     taxonomy:
       area:
         title: Area
@@ -101,18 +115,13 @@ spec:
       targets:
         all: [web, ios, android]
       schema:
+        application_id:
+          type: string
+          dict: data/application_id
+          valueRequired: true
         event_name:
           type: string
           required: true
-
-  transforms:
-    slug:
-      - lower
-      - trim
-      - replace:
-          from: " "
-          to: "_"
-      - truncate: 160
 
 ```
 
@@ -120,7 +129,7 @@ spec:
 
 ```yaml
 # events/auth/login_click.yaml
-opentp: 2025-12
+opentp: 2026-01
 
 event:
   key: auth::login_click
@@ -128,11 +137,13 @@ event:
     action: User clicks login button
   payload:
     schema:
+      application_id:
+        value: web-app
       event_name:
         value: login_click
 ```
 
-Note: taxonomy fields referenced in `spec.paths.events.pattern` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
+Note: taxonomy fields referenced in `spec.paths.events.template` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
 
 ### 3. Validate
 
@@ -146,7 +157,7 @@ opentp validate
 | Command | Description                                         |
 |---------|-----------------------------------------------------|
 | `opentp validate` | Validate all events                                 |
-| `opentp fix` | Auto-fix structure and event keys based on taxonomy |
+| `opentp fix` | Auto-fix `event.key` (requires `spec.events.x-opentp.keygen`) |
 | `opentp generate json` | Export as JSON                                      |
 | `opentp generate yaml` | Export as YAML                                      |
 | `opentp --help` | Show help                                           |
@@ -179,7 +190,7 @@ Define allowed values once, reference everywhere:
 
 ```yaml
 # dictionaries/taxonomy/areas.yaml
-opentp: 2025-12
+opentp: 2026-01
 
 dict:
   type: string
@@ -199,7 +210,7 @@ taxonomy:
 
 ### Transforms
 
-Transforms modify taxonomy values when generating event keys.
+Transforms modify taxonomy values when generating event keys (via `spec.events.x-opentp.keygen`).
 
 | Transform | Description |
 |-----------|-------------|
@@ -218,19 +229,23 @@ Transforms modify taxonomy values when generating event keys.
 
 ### Validation Checks
 
-Add checks to fields:
+Use JSON-Schema-like constraints for portable validation (e.g. `minLength`, `maximum`, `pattern`).
+
+For CLI-specific validation rules, use `x-opentp.checks`.
 
 ```yaml
 taxonomy:
   area:
     type: string
-    checks:
-      max-length: 50
-      pattern: "^[a-z_]+$"
-      not-empty: true
+    minLength: 1
+    maxLength: 50
+    pattern: "^[a-z_]+$"
+    x-opentp:
+      checks:
+        starts-with: "a"
 ```
 
-Built-in checks: `max-length`, `min-length`, `pattern`, `starts-with`, `ends-with`, `contains`, `not-empty`, `webhook`
+Built-in `x-opentp.checks`: `max-length`, `min-length`, `pattern`, `starts-with`, `ends-with`, `contains`, `not-empty`, `webhook`
 
 ### Webhook Validation
 
@@ -240,13 +255,14 @@ Validate against external API:
 taxonomy:
   company_id:
     type: string
-    checks:
-      webhook:
-        url: https://api.company.com/validate
-        headers:
-          Authorization: "Bearer ${API_KEY}"
-        timeout: 5000
-        retries: 2
+    x-opentp:
+      checks:
+        webhook:
+          url: https://api.company.com/validate
+          headers:
+            Authorization: "Bearer ${API_KEY}"
+          timeout: 5000
+          retries: 2
 ```
 
 ## Extensibility
@@ -305,27 +321,27 @@ See `tests/data/coverage-valid/` for a complete working example used by the CLI 
 IDE autocompletion and validation:
 
 ```yaml
-# yaml-language-server: $schema=https://opentp.dev/schemas/2025-12/event.schema.json
-opentp: 2025-12
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-01/event.schema.json
+opentp: 2026-01
 event:
   ...
 ```
 
 Available schemas:
-- `https://opentp.dev/schemas/2025-12/opentp.schema.json` — main config
-- `https://opentp.dev/schemas/2025-12/event.schema.json` — events
-- `https://opentp.dev/schemas/2025-12/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/2026-01/opentp.schema.json` — main config
+- `https://opentp.dev/schemas/2026-01/event.schema.json` — events
+- `https://opentp.dev/schemas/2026-01/dict.schema.json` — dictionaries
 
 ## Enterprise Installation
 
 For internal/private repositories:
 
 ```bash
-OPENTP_BASE_URL="https://github.mycompany.com/org/opentrackplan/releases" \
+OPENTP_DOWNLOAD_BASE="https://github.mycompany.com/org/opentrackplan/opentp-cli/releases/download" \
   curl -fsSL https://opentp.dev/install | bash
 ```
 
-Config is saved to `~/.opentp/config` for future upgrades.
+The `OPENTP_DOWNLOAD_BASE` value is not persisted (set it again when needed).
 
 ## Roadmap
 

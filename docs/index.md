@@ -26,7 +26,7 @@ These options are available for all commands:
 | Command | Description |
 |---------|-------------|
 | [`validate`](/cli/validate) | Validate all events |
-| [`fix`](/cli/fix) | Auto-fix event keys based on taxonomy |
+| [`fix`](/cli/fix) | Auto-fix `event.key` (requires `spec.events.x-opentp.keygen`) |
 | [`generate`](/cli/generate) | Export tracking plan to various formats |
 
 ## Quick Examples

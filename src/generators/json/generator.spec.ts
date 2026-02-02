@@ -4,15 +4,16 @@ import { jsonGenerator } from "./index";
 
 const mockContext: GeneratorContext = {
   config: {
-    opentp: "2025-12",
+    opentp: "2026-01",
     info: {
       title: "Test App",
       version: "1.0.0",
     },
     spec: {
+      paths: {
+        events: { root: "/events", template: "{area}/{event}.yaml" },
+      },
       events: {
-        key: { pattern: "{app}::{name}" },
-        paths: {},
         taxonomy: {},
         payload: { targets: { all: [] }, schema: {} },
       },
@@ -23,11 +24,11 @@ const mockContext: GeneratorContext = {
       filePath: "/test/events/app/login.yaml",
       relativePath: "app/login.yaml",
       key: "app::login",
-      expectedKey: "app::login",
+      expectedKey: null,
       taxonomy: { app: "myapp", name: "login" },
       lifecycle: { status: "active" },
       ignore: [],
-      payload: { targets: {} },
+      payload: { schema: {} },
     },
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
@@ -45,7 +46,7 @@ describe("json generator", () => {
     expect(result.files).toBeUndefined();
 
     const parsed = JSON.parse(result.stdout!);
-    expect(parsed.opentp).toBe("2025-12");
+    expect(parsed.opentp).toBe("2026-01");
     expect(parsed.info.title).toBe("Test App");
     expect(parsed.events).toHaveLength(1);
     expect(parsed.events[0].key).toBe("app::login");

@@ -9,21 +9,24 @@ sidebar:
 
 Transforms modify taxonomy values when generating event keys.
 
-They are defined in `opentp.yaml` as named pipelines of steps and referenced in `spec.events.key.pattern` using `{field | transformName}`.
+They are defined in `opentp.yaml` as named pipelines of steps and referenced in `spec.events.x-opentp.keygen.template` using `{field | transformName}`.
 
 ## Defining Transforms
 
 ```yaml
 # opentp.yaml
 spec:
-  transforms:
-    slug:
-      - lower
-      - trim
-      - replace:
-          from: " "
-          to: "_"
-      - truncate: 160
+  events:
+    x-opentp:
+      keygen:
+        transforms:
+          slug:
+            - lower
+            - trim
+            - replace:
+                from: " "
+                to: "_"
+            - truncate: 160
 ```
 
 Each step is either:
@@ -36,8 +39,9 @@ Each step is either:
 # opentp.yaml
 spec:
   events:
-    key:
-      pattern: "{area | slug}::{event | slug}"
+    x-opentp:
+      keygen:
+        template: "{area | slug}::{event | slug}"
 ```
 
 ## Built-in Steps
@@ -65,4 +69,3 @@ module.exports = {
   factory: () => (value) => value.split("").reverse().join(""),
 };
 ```
-

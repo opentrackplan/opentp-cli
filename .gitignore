@@ -28,9 +28,6 @@ releases/
 coverage/
 .nyc_output/
 
-# Installations
-install/
-
 # TypeScript
 *.tsbuildinfo
 

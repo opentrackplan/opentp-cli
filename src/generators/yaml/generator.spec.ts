@@ -4,15 +4,16 @@ import { yamlGenerator } from "./index";
 
 const mockContext: GeneratorContext = {
   config: {
-    opentp: "2025-12",
+    opentp: "2026-01",
     info: {
       title: "Test App",
       version: "1.0.0",
     },
     spec: {
+      paths: {
+        events: { root: "/events", template: "{area}/{event}.yaml" },
+      },
       events: {
-        key: { pattern: "{app}::{name}" },
-        paths: {},
         taxonomy: {},
         payload: { targets: { all: [] }, schema: {} },
       },
@@ -23,11 +24,11 @@ const mockContext: GeneratorContext = {
       filePath: "/test/events/app/login.yaml",
       relativePath: "app/login.yaml",
       key: "app::login",
-      expectedKey: "app::login",
+      expectedKey: null,
       taxonomy: { app: "myapp", name: "login" },
       lifecycle: { status: "active" },
       ignore: [],
-      payload: { targets: {} },
+      payload: { schema: {} },
     },
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
@@ -44,7 +45,7 @@ describe("yaml generator", () => {
     expect(result.stdout).toBeDefined();
     expect(result.files).toBeUndefined();
 
-    expect(result.stdout).toContain("opentp: 2025-12");
+    expect(result.stdout).toContain("opentp: 2026-01");
     expect(result.stdout).toContain("title: Test App");
     expect(result.stdout).toContain("key: app::login");
   });
@@ -58,7 +59,7 @@ describe("yaml generator", () => {
     expect(result.stdout).toBeUndefined();
     expect(result.files).toHaveLength(1);
     expect(result.files![0].path).toBe("./output/events.yaml");
-    expect(result.files![0].content).toContain("opentp: 2025-12");
+    expect(result.files![0].content).toContain("opentp: 2026-01");
   });
 
   it("should include dictionaries", () => {

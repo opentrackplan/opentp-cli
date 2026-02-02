@@ -1,4 +1,4 @@
-opentp: 2025-12
+opentp: 2026-01
 
 event:
   key: auth::pii_meta_missing_required::p1::internal-false

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ValidationError } from "../types";
-import { getDictsPath, getEventsPath, getEventsPattern, loadConfig } from "./config";
+import { getDictsPath, getEventsPath, getEventsTemplate, loadConfig } from "./config";
 import type { DictionaryIssue } from "./dict";
 import { loadDictionaries } from "./dict";
 import { loadEvents } from "./event";
@@ -40,12 +40,12 @@ async function runFixture(fixtureName: FixtureName): Promise<{
     : { dictionaries: new Map(), issues: [] };
 
   const eventsPath = getEventsPath(config, root);
-  const eventsPattern = getEventsPattern(config);
+  const eventsTemplate = getEventsTemplate(config);
 
   expect(eventsPath).toBeTruthy();
-  expect(eventsPattern).toBeTruthy();
+  expect(eventsTemplate).toBeTruthy();
 
-  const events = loadEvents(eventsPath!, eventsPattern!, config);
+  const events = loadEvents(eventsPath!, eventsTemplate!, config);
   expect(events.length).toBeGreaterThan(0);
 
   const errors = await validateEvents(events, config, dictResult.dictionaries);
@@ -91,8 +91,8 @@ describe("fixtures", () => {
         }),
         expect.objectContaining({
           event: "auth/1/false/fragments_missing.yaml",
-          path: "taxonomy.object",
-          message: "Required fragment 'object' is missing",
+          path: "taxonomy.action_detail",
+          message: expect.stringContaining("Value does not match template"),
         }),
         expect.objectContaining({
           event: "auth/1/false/key_mismatch.yaml",
@@ -125,6 +125,10 @@ describe("fixtures", () => {
         }),
         expect.objectContaining({
           event: "auth/1/false/payload_value_type_invalid.yaml",
+          path: "payload.web.schema.application_id.value",
+        }),
+        expect.objectContaining({
+          event: "auth/1/false/payload_missing_value_required.yaml",
           path: "payload.web.schema.application_id.value",
         }),
         expect.objectContaining({
