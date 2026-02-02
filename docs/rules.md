@@ -15,7 +15,12 @@ OpenTrackPlan `2026-01` standardizes JSON-Schema-like constraints on fields (e.g
 
 Use `valueRequired: true` when a field must be pinned to a single constant per event (for example `application_id`).
 
-`valueRequired: true` implies `required: true` (tooling should treat `required: false` together with `valueRequired: true` as invalid).
+`valueRequired` is independent of `required`. `required: false` + `valueRequired: true` is valid and means the field may be omitted in payload, but if present it must equal the fixed `value`.
+
+Tooling enforces `valueRequired: true` by requiring a fixed `value` when either:
+
+- the field is required (`required: true` in the effective schema), or
+- the event explicitly defines the field in its payload schema.
 
 ```yaml
 # opentp.yaml

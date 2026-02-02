@@ -11,7 +11,7 @@ set -euo pipefail
 #     curl -fsSL https://opentp.dev/install | bash
 
 # Settings (edit these)
-OPENTP_VERSION="0.7.0"
+OPENTP_VERSION="0.7.1"
 OPENTP_DOWNLOAD_BASE="${OPENTP_DOWNLOAD_BASE:-https://github.com/opentrackplan/opentp-cli/releases/download}"
 
 # Windows detection - redirect to PowerShell

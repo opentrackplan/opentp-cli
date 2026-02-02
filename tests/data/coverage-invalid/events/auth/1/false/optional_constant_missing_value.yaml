@@ -1,0 +1,19 @@
+opentp: 2026-01
+
+event:
+  key: auth::optional_constant_missing_value::p1::internal-false
+
+  taxonomy:
+    action: Optional constant is defined without a fixed value
+    action_detail: "test::payload"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: optional_constant_missing_value
+      event_category:
+        value: auth
+      build_variant:
+        type: string

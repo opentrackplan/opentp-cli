@@ -73,35 +73,12 @@ export async function validateEvents(
   // 1. Target base schema conflicts against global base schema
   const globalBaseSchema = config.spec.events.payload.schema;
 
-  // Spec-level validation: valueRequired implies required=true
-  for (const [fieldName, field] of Object.entries(globalBaseSchema)) {
-    if (field.valueRequired === true && field.required === false) {
-      errors.push({
-        event: "opentp.yaml",
-        path: `spec.events.payload.schema.${fieldName}`,
-        message:
-          "Invalid field: valueRequired=true implies required=true (required=false is not allowed)",
-        severity: "error",
-      });
-    }
-  }
-
   for (const [targetId, targetConfig] of Object.entries(config.spec.targets ?? {})) {
     const targetSchema = targetConfig.schema;
     if (!targetSchema) continue;
 
     for (const [fieldName, targetField] of Object.entries(targetSchema)) {
       const baseField = globalBaseSchema[fieldName];
-
-      if (targetField.valueRequired === true && targetField.required === false) {
-        errors.push({
-          event: "opentp.yaml",
-          path: `spec.targets.${targetId}.schema.${fieldName}`,
-          message:
-            "Invalid field: valueRequired=true implies required=true (required=false is not allowed)",
-          severity: "error",
-        });
-      }
 
       if (!baseField) continue;
 
@@ -130,16 +107,6 @@ export async function validateEvents(
           path: `spec.targets.${targetId}.schema.${fieldName}`,
           message:
             "Cannot weaken valueRequired field in target schema (base valueRequired=true, target valueRequired=false)",
-          severity: "error",
-        });
-      }
-
-      if (baseField.valueRequired === true && targetField.required === false) {
-        errors.push({
-          event: "opentp.yaml",
-          path: `spec.targets.${targetId}.schema.${fieldName}`,
-          message:
-            "Cannot set required=false when base valueRequired=true (valueRequired implies required=true)",
           severity: "error",
         });
       }
@@ -1268,26 +1235,6 @@ async function validatePayload(
             severity: "error",
           });
         }
-
-        if (baseField.valueRequired === true && fieldValue.required === false) {
-          errors.push({
-            event: event.relativePath,
-            path: `${schemaPrefix}.${fieldName}`,
-            message:
-              "Cannot set required=false when base valueRequired=true (valueRequired implies required=true)",
-            severity: "error",
-          });
-        }
-
-        if (fieldValue.valueRequired === true && fieldValue.required === false) {
-          errors.push({
-            event: event.relativePath,
-            path: `${schemaPrefix}.${fieldName}`,
-            message:
-              "Invalid field: valueRequired=true implies required=true (required=false is not allowed)",
-            severity: "error",
-          });
-        }
       }
 
       // Effective schema for this target+version
@@ -1380,17 +1327,10 @@ async function validatePayload(
         }
 
         if (effectiveField.valueRequired === true) {
-          if (effectiveField.required === false) {
-            errors.push({
-              event: event.relativePath,
-              path: fieldPath,
-              message:
-                "Invalid field: valueRequired=true implies required=true (required=false is not allowed)",
-              severity: "error",
-            });
-          }
+          const eventDefinesField = Object.hasOwn(eventSchema, fieldName);
+          const needsFixedValue = effectiveField.required === true || eventDefinesField;
 
-          if (effectiveField.value === undefined) {
+          if (needsFixedValue && effectiveField.value === undefined) {
             errors.push({
               event: event.relativePath,
               path: `${fieldPath}.value`,

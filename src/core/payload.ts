@@ -139,22 +139,6 @@ function checkFieldMergeConflicts(
         "Cannot weaken valueRequired field (base valueRequired=true, override valueRequired=false)",
     });
   }
-
-  if (base.valueRequired === true && override.required === false) {
-    issues.push({
-      path: fieldPath,
-      message:
-        "Cannot set required=false when base valueRequired=true (valueRequired implies required=true)",
-    });
-  }
-
-  if (override.valueRequired === true && override.required === false) {
-    issues.push({
-      path: fieldPath,
-      message:
-        "Invalid field: valueRequired=true implies required=true (required=false is not allowed)",
-    });
-  }
 }
 
 export function mergeField(base: Field, override: Field): Field {

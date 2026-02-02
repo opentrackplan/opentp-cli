@@ -87,6 +87,10 @@ spec:
           dict: data/application_id
           required: true
           valueRequired: true
+        build_variant:
+          type: string
+          required: false
+          valueRequired: true
         event_name:
           type: string
           required: true

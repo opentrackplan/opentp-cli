@@ -132,6 +132,10 @@ describe("fixtures", () => {
           path: "payload.web.schema.application_id.value",
         }),
         expect.objectContaining({
+          event: "auth/1/false/optional_constant_missing_value.yaml",
+          path: "payload.web.schema.build_variant.value",
+        }),
+        expect.objectContaining({
           event: "auth/1/false/pii_missing_kind.yaml",
           path: "payload.web.schema.user_id.pii.kind",
           message: "pii.kind is required",
