@@ -1,0 +1,11 @@
+services:
+  opentp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../examples/demo-plan:/data
+    environment:
+      - OPENTP_UI_DIR=/app/ui-dist

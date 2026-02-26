@@ -1,0 +1,11 @@
+opentp: 2026-01
+
+event:
+  key: test::sample
+  taxonomy:
+    area: test
+    event: sample
+  payload:
+    schema:
+      event_name:
+        value: sample_event

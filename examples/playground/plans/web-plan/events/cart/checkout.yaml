@@ -1,0 +1,20 @@
+opentp: 2026-01
+event:
+  key: cart::checkout
+  taxonomy:
+    area: cart
+    event: checkout
+    action: User starts checkout
+  lifecycle:
+    status: active
+  payload:
+    web:
+      schema:
+        event_name:
+          value: begin_checkout
+        cart_total:
+          type: number
+          required: true
+        item_count:
+          type: integer
+          required: true

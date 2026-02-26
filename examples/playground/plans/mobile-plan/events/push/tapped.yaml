@@ -1,0 +1,17 @@
+opentp: 2026-01
+event:
+  key: push::tapped
+  taxonomy:
+    area: push
+    event: tapped
+    action: User taps push notification
+  lifecycle:
+    status: active
+  payload:
+    all:
+      schema:
+        event_name:
+          value: push_tapped
+        campaign_id:
+          type: string
+          required: true

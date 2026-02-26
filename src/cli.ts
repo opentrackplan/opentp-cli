@@ -16,6 +16,7 @@ import { formatErrors, validateEvents } from "./core/validator";
 import type { GeneratorOptions } from "./generators";
 import { getGenerator, getGeneratorNames, loadExternalGenerators } from "./generators";
 import { SPEC_SCHEMAS_URL, SPEC_VERSION, VERSION } from "./meta";
+import { startServer } from "./serve";
 import { loadExternalTransforms } from "./transforms";
 import type { EventFile } from "./types";
 import { loadYaml, saveYaml } from "./util/files";
@@ -33,6 +34,13 @@ interface CliOptions {
   // Generate command options
   generatorName?: string;
   generatorOptions: GeneratorOptions;
+  // Serve command options
+  serveOptions: {
+    port: number;
+    host: string;
+    open: boolean;
+    noUi: boolean;
+  };
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -46,6 +54,7 @@ function parseArgs(args: string[]): CliOptions {
     externalTransforms: [],
     externalGenerators: [],
     generatorOptions: {},
+    serveOptions: { port: 3000, host: "localhost", open: false, noUi: false },
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -54,6 +63,7 @@ function parseArgs(args: string[]): CliOptions {
     if (
       arg === "validate" ||
       arg === "fix" ||
+      arg === "serve" ||
       arg === "export" ||
       arg === "help" ||
       arg === "version"
@@ -112,6 +122,24 @@ function parseArgs(args: string[]): CliOptions {
       options.generatorOptions.pretty = true;
     } else if (arg === "--no-pretty") {
       options.generatorOptions.pretty = false;
+    } else if (arg === "--target" || arg === "-t") {
+      options.generatorOptions.target = args[++i];
+    } else if (arg.startsWith("--target=")) {
+      options.generatorOptions.target = arg.slice(9);
+    } else if (arg === "--standalone") {
+      options.generatorOptions.standalone = true;
+    } else if (arg === "--port") {
+      options.serveOptions.port = Number(args[++i]);
+    } else if (arg.startsWith("--port=")) {
+      options.serveOptions.port = Number(arg.slice(7));
+    } else if (arg === "--host") {
+      options.serveOptions.host = args[++i];
+    } else if (arg.startsWith("--host=")) {
+      options.serveOptions.host = arg.slice(7);
+    } else if (arg === "--open") {
+      options.serveOptions.open = true;
+    } else if (arg === "--no-ui") {
+      options.serveOptions.noUi = true;
     }
   }
 
@@ -128,6 +156,7 @@ Commands:
   validate              Validate events against opentp.yaml schema (default)
   fix                   Auto-fix event keys
   generate <name>       Generate output using a generator
+  serve                 Start local HTTP server for browsing tracking plans
   help                  Show this help message
   version               Show version
 
@@ -135,6 +164,9 @@ Generators:
   json                  Export events as JSON
   yaml                  Export events as YAML
   template              Render events using a template file
+  ts-sdk                Generate TypeScript SDK with typed event definitions
+  swift-sdk             Generate Swift SDK with typed event definitions
+  kotlin-sdk            Generate Kotlin SDK with typed event definitions
 
   Options:
   --root, -r <path>              Project root directory (default: current directory)
@@ -149,6 +181,14 @@ Generators:
   --output, -o <path>            Output file path (default: stdout)
   --pretty / --no-pretty         Pretty print output (default: true)
   --file <path>                  Template file path (for template generator)
+  --target, -t <name>            Target platform (for SDK generators)
+  --standalone                   Generate standalone code without runtime dependency (for SDK generators)
+
+  Serve Options:
+  --port <number>                HTTP server port (default: 3000)
+  --host <address>               Bind address (default: localhost)
+  --open                         Open browser on start
+  --no-ui                        API only, don't serve UI files
 
 Environment:
   OPENTP_ROOT         Alternative to --root option
@@ -470,6 +510,22 @@ async function runGenerate(options: CliOptions): Promise<number> {
   }
 }
 
+async function runServe(options: CliOptions): Promise<number> {
+  if (options.verbose) {
+    setLogLevel("debug");
+  }
+
+  await startServer({
+    port: options.serveOptions.port,
+    host: options.serveOptions.host,
+    root: options.root,
+    open: options.serveOptions.open,
+    noUi: options.serveOptions.noUi,
+  });
+
+  return 0;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const options = parseArgs(args);
@@ -502,6 +558,10 @@ async function main(): Promise<void> {
 
     case "generate":
       exitCode = await runGenerate(options);
+      break;
+
+    case "serve":
+      exitCode = await runServe(options);
       break;
 
     default:

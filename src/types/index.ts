@@ -203,6 +203,25 @@ export interface TargetConfig {
   schema?: Record<string, Field>;
 }
 
+// === Export Config ===
+export interface ExportGeneratorConfig {
+  name: string;
+  target?: string;
+  standalone?: boolean;
+}
+
+export interface ExportConfig {
+  generators?: ExportGeneratorConfig[];
+  bundle?: boolean;
+}
+
+// === UI Config ===
+export interface UiConfig {
+  theme?: "dark" | "light" | "auto";
+  mode?: "editor" | "viewer";
+  title?: string;
+}
+
 // === OpenTP Config (opentp.yaml) ===
 export interface OpenTPConfig {
   opentp: Version;
@@ -218,6 +237,8 @@ export interface OpenTPConfig {
       dictionaries?: DictionariesPathConfig;
     };
     targets?: Record<string, TargetConfig>;
+    export?: ExportConfig;
+    ui?: UiConfig;
     events: {
       key?: EventKeyConstraints;
       "x-opentp"?: XOpentpEventsExtensions;

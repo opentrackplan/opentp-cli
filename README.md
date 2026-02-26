@@ -343,6 +343,29 @@ OPENTP_DOWNLOAD_BASE="https://github.mycompany.com/org/opentrackplan/opentp-cli/
 
 The `OPENTP_DOWNLOAD_BASE` value is not persisted (set it again when needed).
 
+## Local Development (CLI + UI)
+
+```bash
+# Terminal 1 — Build and start CLI API server
+bun install
+bun run build
+node dist/index.cjs serve --root examples/demo-plan --port 3000
+
+# Terminal 2 — Start UI dev server (proxies /api and /ws to :3000)
+cd ui
+npm install
+npm run dev
+# Open http://localhost:5173
+```
+
+Or with Docker:
+
+```bash
+docker build -f docker/Dockerfile -t opentp .
+docker run -p 3000:3000 -v ./examples/demo-plan:/data opentp
+# Open http://localhost:3000
+```
+
 ## Roadmap
 
 - [x] CLI validation
