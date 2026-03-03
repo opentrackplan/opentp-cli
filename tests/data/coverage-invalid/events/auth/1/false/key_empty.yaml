@@ -1,0 +1,17 @@
+opentp: 2026-01
+
+event:
+  key:
+
+  taxonomy:
+    action: Event key is empty
+    action_detail: "test::key"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: key_empty
+      event_category:
+        value: auth

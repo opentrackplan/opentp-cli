@@ -28,6 +28,12 @@ function buildIgnoreSet(ignoreChecks: Array<{ path: string }>): Set<string> {
   return ignore;
 }
 
+function normalizeEventKey(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.trim() === "") return null;
+  return value;
+}
+
 /**
  * Validates all events and returns list of errors
  * @param events - Resolved events to validate
@@ -57,16 +63,19 @@ export async function validateEvents(
   // 0. Unique event keys across the tracking plan
   const seenKeys = new Map<string, string>();
   for (const event of events) {
-    const prev = seenKeys.get(event.key);
+    const key = normalizeEventKey(event.key);
+    if (key === null) continue;
+
+    const prev = seenKeys.get(key);
     if (prev) {
       errors.push({
         event: event.relativePath,
         path: "event.key",
-        message: `Duplicate event key '${event.key}' (already used in '${prev}')`,
+        message: `Duplicate event key '${key}' (already used in '${prev}')`,
         severity: "error",
       });
     } else {
-      seenKeys.set(event.key, event.relativePath);
+      seenKeys.set(key, event.relativePath);
     }
   }
 
@@ -154,65 +163,74 @@ export async function validateEvent(
 
   // 1. Key validation
   if (!ignore.has("key")) {
-    const key = event.key;
+    const key = normalizeEventKey(event.key);
     const constraints = config.spec.events.key;
 
-    if (typeof constraints?.minLength === "number" && key.length < constraints.minLength) {
+    if (key === null) {
       errors.push({
         event: event.relativePath,
         path: "event.key",
-        message: `Key length must be >= ${constraints.minLength}`,
+        message: "Missing required field: event.key",
         severity: "error",
       });
-    }
-
-    if (typeof constraints?.maxLength === "number" && key.length > constraints.maxLength) {
-      errors.push({
-        event: event.relativePath,
-        path: "event.key",
-        message: `Key length must be <= ${constraints.maxLength}`,
-        severity: "error",
-      });
-    }
-
-    if (typeof constraints?.pattern === "string") {
-      try {
-        const re = new RegExp(constraints.pattern, "u");
-        if (!re.test(key)) {
-          errors.push({
-            event: event.relativePath,
-            path: "event.key",
-            message: `Key does not match pattern ${JSON.stringify(constraints.pattern)}`,
-            severity: "error",
-          });
-        }
-      } catch (e) {
+    } else {
+      if (typeof constraints?.minLength === "number" && key.length < constraints.minLength) {
         errors.push({
-          event: "opentp.yaml",
-          path: "spec.events.key.pattern",
-          message: `Invalid regex in spec.events.key.pattern: ${String(e)}`,
+          event: event.relativePath,
+          path: "event.key",
+          message: `Key length must be >= ${constraints.minLength}`,
           severity: "error",
         });
       }
-    }
 
-    // Optional tooling-defined keygen: enforce generated key equality when configured
-    if (config.spec.events["x-opentp"]?.keygen) {
-      if (typeof event.expectedKey !== "string") {
+      if (typeof constraints?.maxLength === "number" && key.length > constraints.maxLength) {
         errors.push({
           event: event.relativePath,
           path: "event.key",
-          message:
-            "spec.events.x-opentp.keygen is configured but the expected key could not be generated",
+          message: `Key length must be <= ${constraints.maxLength}`,
           severity: "error",
         });
-      } else if (event.key !== event.expectedKey) {
-        errors.push({
-          event: event.relativePath,
-          path: "event.key",
-          message: `Key mismatch: got '${event.key}', expected '${event.expectedKey}'`,
-          severity: "error",
-        });
+      }
+
+      if (typeof constraints?.pattern === "string") {
+        try {
+          const re = new RegExp(constraints.pattern, "u");
+          if (!re.test(key)) {
+            errors.push({
+              event: event.relativePath,
+              path: "event.key",
+              message: `Key does not match pattern ${JSON.stringify(constraints.pattern)}`,
+              severity: "error",
+            });
+          }
+        } catch (e) {
+          errors.push({
+            event: "opentp.yaml",
+            path: "spec.events.key.pattern",
+            message: `Invalid regex in spec.events.key.pattern: ${String(e)}`,
+            severity: "error",
+          });
+        }
+      }
+
+      // Optional tooling-defined keygen: enforce generated key equality when configured
+      if (config.spec.events["x-opentp"]?.keygen) {
+        if (typeof event.expectedKey !== "string") {
+          errors.push({
+            event: event.relativePath,
+            path: "event.key",
+            message:
+              "spec.events.x-opentp.keygen is configured but the expected key could not be generated",
+            severity: "error",
+          });
+        } else if (key !== event.expectedKey) {
+          errors.push({
+            event: event.relativePath,
+            path: "event.key",
+            message: `Key mismatch: got '${key}', expected '${event.expectedKey}'`,
+            severity: "error",
+          });
+        }
       }
     }
   }

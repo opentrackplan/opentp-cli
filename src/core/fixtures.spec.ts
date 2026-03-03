@@ -99,6 +99,11 @@ describe("fixtures", () => {
           path: "event.key",
         }),
         expect.objectContaining({
+          event: "auth/1/false/key_empty.yaml",
+          path: "event.key",
+          message: "Missing required field: event.key",
+        }),
+        expect.objectContaining({
           event: "auth/1/false/unknown_check.yaml",
           path: "taxonomy.custom_id",
           message: "Unknown check: unknown-check",
