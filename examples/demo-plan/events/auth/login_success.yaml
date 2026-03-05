@@ -1,0 +1,62 @@
+opentp: 2026-01
+event:
+  key: auth::login_success
+  taxonomy:
+    area: auth
+    event: login_success
+    action: User successfully authorized and enters the app
+    priority_level: 1
+  lifecycle:
+    status: active
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: login_success
+        auth_method:
+          title: Auth Method
+          type: string
+          enum:
+            - email_password
+            - google_oauth
+            - github_oauth
+            - microsoft_sso
+            - saml_sso
+          required: true
+          description: The authentication mechanism used to log in
+        is_mfa_enabled:
+          title: MFA Enabled
+          type: boolean
+          required: true
+          description: Whether multi-factor authentication was active for this login
+        login_attempt_count:
+          title: Login Attempt Count
+          type: integer
+          minimum: 1
+          maximum: 10
+          required: false
+          description: Number of attempts (including this one) before success — useful for
+            detecting friction
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: security
+            jira: SEC-101
+            retention_days: 365
+        user_email:
+          title: User Email
+          type: string
+          format: email
+          required: true
+          pii:
+            kind: email
+            masker: star
+            owner: security
+            jira: SEC-102
+            retention_days: 365
+        workspace_id:
+          required: false

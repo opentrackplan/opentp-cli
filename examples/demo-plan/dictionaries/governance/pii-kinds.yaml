@@ -1,0 +1,11 @@
+opentp: 2026-01
+
+dict:
+  type: string
+  values:
+    - email
+    - user_id
+    - ip_address
+    - device_id
+    - full_name
+    - phone

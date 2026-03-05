@@ -1,0 +1,14 @@
+opentp: 2026-01
+
+dict:
+  type: string
+  values:
+    - github
+    - gitlab
+    - jira
+    - slack
+    - figma
+    - google_drive
+    - notion
+    - zapier
+    - webhooks

@@ -1,0 +1,14 @@
+{
+  "name": "platform-playground",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "serve": "bash start-servers.sh",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^6.0.5"
+  }
+}

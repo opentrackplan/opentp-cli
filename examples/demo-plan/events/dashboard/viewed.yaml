@@ -1,0 +1,59 @@
+opentp: 2026-01
+
+event:
+  key: dashboard::viewed
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User lands on and views the main dashboard
+    priority_level: 2
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: dashboard_viewed
+        dashboard_type:
+          title: Dashboard Type
+          type: string
+          enum: [my_work, team, workspace, project]
+          required: true
+          description: Which dashboard variant the user is viewing
+        active_projects_count:
+          title: Active Projects Count
+          type: integer
+          minimum: 0
+          required: false
+          description: Number of in-progress projects visible to the user at view time
+        overdue_tasks_count:
+          title: Overdue Tasks Count
+          type: integer
+          minimum: 0
+          required: false
+          description: Number of tasks past their due date shown on this dashboard
+        load_time_ms:
+          title: Load Time (ms)
+          type: integer
+          minimum: 0
+          required: false
+          description: Time from navigation start to interactive dashboard in milliseconds
+        referrer_page:
+          title: Referrer Page
+          type: string
+          enum: [login, onboarding, project, task, inbox, settings, external, direct]
+          required: false
+          description: Which page the user navigated from
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-401
+            retention_days: 30
+        workspace_id:
+          required: true
