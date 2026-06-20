@@ -28,7 +28,16 @@ const mockContext: GeneratorContext = {
       taxonomy: { app: "myapp", name: "login" },
       lifecycle: { status: "active" },
       ignore: [],
-      payload: { schema: {} },
+      payload: {
+        schema: {
+          dimension_1: {
+            type: "string",
+            name: "orgType",
+            title: "Organization Type",
+            example: "enterprise",
+          },
+        },
+      },
     },
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
@@ -48,6 +57,8 @@ describe("yaml generator", () => {
     expect(result.stdout).toContain("opentp: 2026-01");
     expect(result.stdout).toContain("title: Test App");
     expect(result.stdout).toContain("key: app::login");
+    expect(result.stdout).toContain("name: orgType");
+    expect(result.stdout).toContain("example: enterprise");
   });
 
   it("should output to file when --output is specified", () => {

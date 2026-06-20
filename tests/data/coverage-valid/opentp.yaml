@@ -100,6 +100,14 @@ spec:
         event_category:
           type: string
           required: true
+        dimension_1:
+          type: string
+          name: orgType
+          title: Organization Type
+          description: Logical organization type stored in analytics slot dimension_1
+          enum: [startup, enterprise, agency]
+          example: enterprise
+          required: false
         auth_method:
           type: string
           enum: [email, google, github]

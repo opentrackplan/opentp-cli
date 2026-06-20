@@ -48,8 +48,10 @@ export interface RuleDefinition {
  * Field definition in spec or event
  */
 export interface FieldDefinition {
+  name?: string;
   title?: string;
   description?: string;
+  example?: unknown;
   type?: "string" | "number" | "boolean";
   enum?: unknown[];
   dict?: string;

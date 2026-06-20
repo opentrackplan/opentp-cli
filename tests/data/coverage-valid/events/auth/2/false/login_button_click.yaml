@@ -19,6 +19,8 @@ event:
         value: login_button_click
       event_category:
         value: auth
+      dimension_1:
+        value: enterprise
       auth_method:
         value: google
       tags:

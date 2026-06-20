@@ -28,7 +28,16 @@ const mockContext: GeneratorContext = {
       taxonomy: { app: "myapp", name: "login" },
       lifecycle: { status: "active" },
       ignore: [],
-      payload: { schema: {} },
+      payload: {
+        schema: {
+          dimension_1: {
+            type: "string",
+            name: "orgType",
+            title: "Organization Type",
+            example: "enterprise",
+          },
+        },
+      },
     },
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
@@ -50,6 +59,8 @@ describe("json generator", () => {
     expect(parsed.info.title).toBe("Test App");
     expect(parsed.events).toHaveLength(1);
     expect(parsed.events[0].key).toBe("app::login");
+    expect(parsed.events[0].payload.schema.dimension_1.name).toBe("orgType");
+    expect(parsed.events[0].payload.schema.dimension_1.example).toBe("enterprise");
     expect(parsed.dictionaries.actions).toEqual(["click", "view", "submit"]);
   });
 

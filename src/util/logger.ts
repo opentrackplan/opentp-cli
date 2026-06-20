@@ -20,6 +20,18 @@ function shouldLog(level: LogLevel): boolean {
   return levels[level] >= levels[currentLevel];
 }
 
+function serializeLogValue(value: unknown): string {
+  if (value instanceof Error) {
+    return JSON.stringify({
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    });
+  }
+
+  return JSON.stringify(value);
+}
+
 function formatMessage(level: LogLevel, obj: unknown, msg?: string): string {
   const prefix = {
     trace: "⋯",
@@ -38,7 +50,7 @@ function formatMessage(level: LogLevel, obj: unknown, msg?: string): string {
   } else if (typeof obj === "object" && obj !== null) {
     const entries = Object.entries(obj as Record<string, unknown>);
     if (entries.length > 0) {
-      data = entries.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+      data = entries.map(([k, v]) => `${k}=${serializeLogValue(v)}`).join(" ");
     }
   }
 

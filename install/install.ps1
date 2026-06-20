@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 
 # Settings (edit these)
-$OPENTP_VERSION = "0.7.1"
+$OPENTP_VERSION = "0.7.3"
 $DefaultDownloadBase = "https://github.com/opentrackplan/opentp-cli/releases/download"
 $DownloadBase = if ($env:OPENTP_DOWNLOAD_BASE) { $env:OPENTP_DOWNLOAD_BASE } else { $DefaultDownloadBase }
 

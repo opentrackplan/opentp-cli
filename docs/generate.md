@@ -87,7 +87,12 @@ External generators are loaded only via `--external-generators` (the spec does n
       "lifecycle": { "status": "active" },
       "payload": {
         "schema": {
-          "event_name": { "value": "login_click" }
+          "event_name": { "value": "login_click" },
+          "dimension_1": {
+            "type": "string",
+            "name": "orgType",
+            "example": "enterprise"
+          }
         }
       }
     }
@@ -115,6 +120,10 @@ events:
       schema:
         event_name:
           value: login_click
+        dimension_1:
+          type: string
+          name: orgType
+          example: enterprise
 dictionaries: {}
 ```
 

@@ -24,6 +24,8 @@ export interface XOpentpFieldExtensions {
 }
 
 export type ScalarType = "string" | "number" | "integer" | "boolean";
+export type ScalarValue = string | number | boolean;
+export type FieldValue = ScalarValue | ScalarValue[];
 
 export interface ArrayItems {
   type: ScalarType;
@@ -47,8 +49,10 @@ export interface ArrayItems {
 // === Field ===
 export interface Field {
   // Metadata
+  name?: string;
   title?: string;
   description?: string;
+  example?: FieldValue;
   pii?: Record<string, unknown> & {
     /** Reserved: PII kind identifier (tool-defined values) */
     kind?: string;
@@ -62,7 +66,7 @@ export interface Field {
   dict?: string; // reference to dictionary file
   required?: boolean;
   valueRequired?: boolean;
-  value?: string | number | boolean | Array<string | number | boolean>; // fixed value
+  value?: FieldValue; // fixed value
 
   // String constraints
   minLength?: number;

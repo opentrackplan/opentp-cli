@@ -91,6 +91,11 @@ spec:
         event_name:
           type: string
           required: true
+        dimension_1:
+          type: string
+          name: orgType
+          title: Organization Type
+          example: enterprise
 
 ```
 
@@ -116,9 +121,13 @@ event:
     schema:
       event_name:
         value: login_click
+      dimension_1:
+        value: enterprise
 ```
 
 Note: taxonomy fields referenced in `spec.paths.events.template` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
+
+Use `name` when a payload field key is a transport or vendor slot, but the field has a clearer logical/code-facing name. `example` provides a representative value for documentation, mock data, and generators.
 
 ### 3. Validate
 
