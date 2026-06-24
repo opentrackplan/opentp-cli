@@ -1,0 +1,10 @@
+opentp: 2026-01
+
+dict:
+  type: string
+  values:
+    - csv
+    - pdf
+    - xlsx
+    - json
+    - png

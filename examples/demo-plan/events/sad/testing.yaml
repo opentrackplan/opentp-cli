@@ -1,0 +1,12 @@
+opentp: 2026-01
+event:
+  key: sad::testing
+  taxonomy:
+    area: sad
+    event: testing
+    action: I click on my nose
+    priority_level: "1"
+  lifecycle:
+    status: active
+  payload:
+    schema: {}

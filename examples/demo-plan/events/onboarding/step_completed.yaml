@@ -1,0 +1,64 @@
+opentp: 2026-01
+
+event:
+  key: onboarding::step_completed
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User completes a step in the onboarding wizard
+    priority_level: 1
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: onboarding_step_completed
+        step_name:
+          title: Step Name
+          type: string
+          enum: [profile_setup, workspace_created, first_project, first_task, invite_teammates, connect_integration, tour_complete]
+          required: true
+        step_number:
+          title: Step Number
+          type: integer
+          minimum: 1
+          maximum: 10
+          required: true
+          description: 1-based position of this step in the onboarding sequence
+        total_steps:
+          title: Total Steps
+          type: integer
+          minimum: 1
+          maximum: 10
+          required: true
+        time_spent_seconds:
+          title: Time Spent (seconds)
+          type: integer
+          minimum: 0
+          required: false
+          description: Seconds the user spent on this step before completing or skipping it
+        was_skipped:
+          title: Was Skipped
+          type: boolean
+          required: true
+          description: True if the user clicked "Skip" instead of completing the step
+        onboarding_variant:
+          title: Onboarding Variant
+          type: string
+          enum: [default, engineering_focus, design_focus, solo_user]
+          required: false
+          description: A/B test variant of the onboarding flow shown to the user
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-301
+            retention_days: 90
+        workspace_id:
+          required: true

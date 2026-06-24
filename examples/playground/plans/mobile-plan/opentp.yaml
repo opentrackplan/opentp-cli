@@ -1,0 +1,47 @@
+opentp: 2026-01
+
+info:
+  title: Mobile App Tracking
+  version: 2.0.0
+  description: Tracking plan for iOS and Android apps
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+
+  targets:
+    ios:
+      title: iOS
+    android:
+      title: Android
+
+  ui:
+    mode: editor
+    title: "Mobile App"
+
+  events:
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+      action:
+        title: Action
+        type: string
+        required: true
+
+    payload:
+      targets:
+        all: [ios, android]
+      schema:
+        event_name:
+          title: Event Name
+          type: string
+          required: true
+          valueRequired: true

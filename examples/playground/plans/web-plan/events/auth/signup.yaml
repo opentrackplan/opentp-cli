@@ -1,0 +1,21 @@
+opentp: 2026-01
+event:
+  key: auth::signup
+  taxonomy:
+    area: auth
+    event: signup
+    action: User creates account
+  lifecycle:
+    status: active
+  payload:
+    web:
+      schema:
+        event_name:
+          value: signup
+        signup_method:
+          type: string
+          enum: [email, google, github]
+          required: true
+        referral_code:
+          type: string
+          required: false

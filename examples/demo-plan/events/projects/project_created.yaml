@@ -1,0 +1,62 @@
+opentp: 2026-01
+
+event:
+  key: projects::project_created
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User creates a new project in their workspace
+    priority_level: 1
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: project_created
+        project_id:
+          title: Project ID
+          type: string
+          required: true
+          description: Unique identifier of the newly created project
+        project_template:
+          title: Project Template
+          type: string
+          enum: [blank, software_sprint, bug_tracker, product_roadmap, marketing_campaign, design_system, okr_tracker]
+          required: true
+          description: Template used to initialise the project structure
+        visibility:
+          title: Visibility
+          type: string
+          enum: [private, team, workspace, public]
+          required: true
+        member_count:
+          title: Member Count
+          type: integer
+          minimum: 1
+          required: false
+          description: Number of members added to the project at creation time
+        has_due_date:
+          title: Has Due Date
+          type: boolean
+          required: true
+          description: Whether the project was created with a target end date
+        creation_context:
+          title: Creation Context
+          type: string
+          enum: [sidebar_button, empty_state, command_palette, api, import]
+          required: true
+          description: UI entry point the user used to start project creation
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-501
+            retention_days: 365
+        workspace_id:
+          required: true

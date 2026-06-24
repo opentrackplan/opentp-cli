@@ -1,0 +1,48 @@
+opentp: 2026-01
+
+info:
+  title: Export Config Test Plan
+  version: 1.0.0
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
+  export:
+    generators:
+      - name: ts-sdk
+        target: web
+        standalone: true
+      - name: swift-sdk
+        target: ios
+      - name: kotlin-sdk
+        target: android
+    bundle: true
+
+  ui:
+    theme: auto
+    mode: editor
+    title: "Test Tracking Plan"
+
+  events:
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+
+    payload:
+      targets:
+        all: [web, ios, android]
+      schema:
+        event_name:
+          type: string
+          required: true

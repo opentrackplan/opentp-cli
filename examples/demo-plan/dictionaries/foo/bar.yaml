@@ -1,0 +1,5 @@
+opentp: 2026-01
+dict:
+  type: string
+  values:
+    - asd

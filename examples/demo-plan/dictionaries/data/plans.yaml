@@ -1,0 +1,10 @@
+opentp: 2026-01
+
+dict:
+  type: string
+  values:
+    - free
+    - starter
+    - pro
+    - business
+    - enterprise

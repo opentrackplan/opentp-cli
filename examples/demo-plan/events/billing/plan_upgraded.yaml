@@ -1,0 +1,70 @@
+opentp: 2026-01
+
+event:
+  key: billing::plan_upgraded
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: Workspace admin upgrades the subscription to a higher tier
+    priority_level: 1
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: plan_upgraded
+        from_plan:
+          title: From Plan
+          type: string
+          dict: data/plans
+          required: true
+          description: Subscription tier before the upgrade
+        to_plan:
+          title: To Plan
+          type: string
+          dict: data/plans
+          required: true
+          description: Subscription tier after the upgrade
+        billing_cycle:
+          title: Billing Cycle
+          type: string
+          enum: [monthly, annual]
+          required: true
+        seats_count:
+          title: Seats Count
+          type: integer
+          minimum: 1
+          required: true
+          description: Number of seats in the new subscription
+        upgrade_trigger:
+          title: Upgrade Trigger
+          type: string
+          enum: [seat_limit_reached, storage_limit_reached, feature_paywall, manual_upgrade, admin_invite_blocked, trial_expiry]
+          required: true
+          description: What prompted the user to upgrade — critical for understanding upgrade intent
+        trial_days_used:
+          title: Trial Days Used
+          type: integer
+          minimum: 0
+          required: false
+          description: How many trial days elapsed before upgrading (0 if no trial)
+        mrr_delta_usd:
+          title: MRR Delta (USD)
+          type: number
+          minimum: 0
+          required: false
+          description: Change in monthly recurring revenue in USD — sent server-side only
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1001
+            retention_days: 365
+        workspace_id:
+          required: true

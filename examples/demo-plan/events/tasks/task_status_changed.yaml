@@ -1,0 +1,69 @@
+opentp: 2026-01
+
+event:
+  key: tasks::task_status_changed
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User moves a task from one workflow status to another
+    priority_level: 1
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: task_status_changed
+        task_id:
+          title: Task ID
+          type: string
+          required: true
+        project_id:
+          title: Project ID
+          type: string
+          required: true
+        from_status:
+          title: From Status
+          type: string
+          enum: [backlog, todo, in_progress, in_review, done, cancelled]
+          required: true
+        to_status:
+          title: To Status
+          type: string
+          enum: [backlog, todo, in_progress, in_review, done, cancelled]
+          required: true
+        change_method:
+          title: Change Method
+          type: string
+          enum: [drag_drop, status_dropdown, keyboard_shortcut, bulk_action, api]
+          required: true
+          description: How the user triggered the status change
+        is_completion:
+          title: Is Completion
+          type: boolean
+          required: true
+          description: True when to_status is "done" — used to track task completion rate
+        task_age_days:
+          title: Task Age (days)
+          type: integer
+          minimum: 0
+          required: false
+          description: Calendar days since the task was created — useful for cycle time analysis
+        was_overdue:
+          title: Was Overdue
+          type: boolean
+          required: false
+          description: True if the task had a due date that had already passed
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-701
+            retention_days: 365
+        workspace_id:
+          required: true

@@ -63,3 +63,14 @@ Thumbs.db
 *.sln
 *.swp
 *.bak
+
+# UI
+ui/node_modules/
+ui/dist/
+ui/.vite/
+
+# Examples
+examples/playground/node_modules/
+examples/demo-plan/dist/
+examples/demo-plan/generated/
+examples/demo-plan/test-app/

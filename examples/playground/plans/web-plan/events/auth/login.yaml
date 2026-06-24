@@ -1,0 +1,18 @@
+opentp: 2026-01
+event:
+  key: auth::login
+  taxonomy:
+    area: auth
+    event: login
+    action: User logs in via web
+  lifecycle:
+    status: active
+  payload:
+    web:
+      schema:
+        event_name:
+          value: login
+        auth_method:
+          type: string
+          enum: [email, google, github]
+          required: true

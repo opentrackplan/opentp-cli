@@ -1,0 +1,69 @@
+opentp: 2026-01
+
+event:
+  key: auth::signup_completed
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User completes registration and a new account is created
+    priority_level: 1
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: signup_completed
+        signup_method:
+          title: Signup Method
+          type: string
+          enum: [email, google_oauth, github_oauth, microsoft_oauth, invite_link]
+          required: true
+        referral_source:
+          title: Referral Source
+          type: string
+          enum: [organic, google_ads, linkedin_ads, twitter_ads, product_hunt, word_of_mouth, email_campaign, partner, direct]
+          required: false
+          description: Acquisition channel that led the user to sign up
+        plan_selected:
+          title: Plan Selected
+          type: string
+          dict: data/plans
+          required: true
+          description: Subscription tier chosen during signup
+        company_size:
+          title: Company Size
+          type: string
+          enum: [solo, 2_10, 11_50, 51_200, 201_1000, 1000_plus]
+          required: false
+          description: Self-reported company headcount range
+        intended_use:
+          title: Intended Use
+          type: string
+          enum: [software_development, product_management, marketing, design, hr, operations, other]
+          required: false
+          description: Self-reported primary use case
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-201
+            retention_days: 365
+        user_email:
+          title: User Email
+          type: string
+          format: email
+          required: true
+          pii:
+            kind: email
+            masker: star
+            owner: analytics
+            jira: DATA-202
+            retention_days: 365
+        workspace_id:
+          required: true

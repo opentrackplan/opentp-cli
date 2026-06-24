@@ -1,0 +1,45 @@
+opentp: 2026-01
+
+info:
+  title: Web App Tracking
+  version: 1.0.0
+  description: Tracking plan for the web application
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+
+  targets:
+    web:
+      title: Web
+
+  ui:
+    mode: editor
+    title: "Web App"
+
+  events:
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+      action:
+        title: Action
+        type: string
+        required: true
+
+    payload:
+      targets:
+        all: [web]
+      schema:
+        event_name:
+          title: Event Name
+          type: string
+          required: true
+          valueRequired: true

@@ -7,8 +7,14 @@ export interface DictionaryIssue {
   message: string;
 }
 
+export interface DictionaryMeta {
+  type: "string" | "number" | "integer" | "boolean";
+  values: (string | number | boolean)[];
+}
+
 export interface LoadDictionariesResult {
   dictionaries: Map<string, (string | number | boolean)[]>;
+  dictMeta: Map<string, DictionaryMeta>;
   issues: DictionaryIssue[];
 }
 
@@ -22,6 +28,7 @@ export function loadDictionaries(
   expectedOpentpVersion?: string,
 ): LoadDictionariesResult {
   const dictionaries = new Map<string, (string | number | boolean)[]>();
+  const dictMeta = new Map<string, DictionaryMeta>();
   const issues: DictionaryIssue[] = [];
 
   const allFiles = scanDirectory(dictsPath);
@@ -86,12 +93,16 @@ export function loadDictionaries(
       // Example: 'Taxonomy/Actions.yaml' -> 'Taxonomy/Actions'
       const dictKey = relativePath.replace(/\.ya?ml$/i, "");
       dictionaries.set(dictKey, dict.dict.values);
+      dictMeta.set(dictKey, {
+        type: dict.dict.type ?? "string",
+        values: dict.dict.values,
+      });
     } catch (error) {
       console.warn(`Failed to load dictionary ${relativePath}:`, error);
     }
   }
 
-  return { dictionaries, issues };
+  return { dictionaries, dictMeta, issues };
 }
 
 /**
