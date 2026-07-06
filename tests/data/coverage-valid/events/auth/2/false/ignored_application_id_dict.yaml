@@ -1,0 +1,23 @@
+opentp: 2026-01
+
+event:
+  key: auth::ignored_application_id_dict::view::legacy_app::p2::internal-false
+
+  ignore:
+    - path: payload.all.1.0.0.schema.application_id.value
+
+  taxonomy:
+    action: User views a legacy app event
+    action_detail: "view::legacy app"
+
+  payload:
+    all:
+      current: "1.0.0"
+      "1.0.0":
+        schema:
+          application_id:
+            value: legacy-app
+          event_name:
+            value: ignored_application_id_dict
+          event_category:
+            value: auth

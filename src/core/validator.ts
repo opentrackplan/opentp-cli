@@ -23,6 +23,15 @@ function buildIgnoreSet(ignoreChecks: Array<{ path: string }>): Set<string> {
     if (payloadSchemaMatch) {
       ignore.add(`payload::${payloadSchemaMatch[1]}`);
     }
+
+    const schemaMarker = ".schema.";
+    if (path.startsWith("payload.") && path.includes(schemaMarker)) {
+      const schemaPath = path.slice(path.indexOf(schemaMarker) + schemaMarker.length);
+      const fieldName = schemaPath.split(".")[0];
+      if (fieldName) {
+        ignore.add(`payload::${fieldName}`);
+      }
+    }
   }
 
   return ignore;
