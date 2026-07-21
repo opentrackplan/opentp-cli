@@ -1,0 +1,17 @@
+opentp: 2026-01
+event:
+  key: onboarding::complete
+  taxonomy:
+    area: onboarding
+    event: complete
+    action: User finishes onboarding
+  lifecycle:
+    status: active
+  payload:
+    all:
+      schema:
+        event_name:
+          value: onboarding_complete
+        steps_completed:
+          type: integer
+          required: true

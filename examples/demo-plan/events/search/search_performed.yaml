@@ -1,0 +1,71 @@
+opentp: 2026-01
+
+event:
+  key: search::search_performed
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User submits a search query and receives results
+    priority_level: 2
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: search_performed
+        search_scope:
+          title: Search Scope
+          type: string
+          enum: [global, project, tasks, comments, members, files]
+          required: true
+          description: Context boundary within which the search was executed
+        result_count:
+          title: Result Count
+          type: integer
+          minimum: 0
+          required: true
+          description: Total number of results returned — 0 means a zero-result search
+        query_length:
+          title: Query Length
+          type: integer
+          minimum: 1
+          required: true
+          description: Character count of the search query (never the query itself — PII risk)
+        has_filters:
+          title: Has Filters
+          type: boolean
+          required: true
+          description: Whether the user had any filters active when searching
+        filters_applied:
+          title: Filters Applied
+          type: array
+          items:
+            type: string
+            enum: [status, assignee, priority, due_date, label, project, creator, type]
+          required: false
+          description: Which filters were active — helps identify power-user behaviour
+        result_clicked:
+          title: Result Clicked
+          type: boolean
+          required: false
+          description: Whether the user clicked any result — False suggests poor result quality
+        clicked_result_position:
+          title: Clicked Result Position
+          type: integer
+          minimum: 1
+          required: false
+          description: 1-based rank of the result the user clicked on
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-901
+            retention_days: 30
+        workspace_id:
+          required: true

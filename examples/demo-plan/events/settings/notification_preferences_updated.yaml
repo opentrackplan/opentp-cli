@@ -1,0 +1,59 @@
+opentp: 2026-01
+
+event:
+  key: settings::notification_preferences_updated
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User changes their notification delivery preferences
+    priority_level: 3
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: notification_preferences_updated
+        changed_settings:
+          title: Changed Settings
+          type: array
+          items:
+            type: string
+            enum: [email_digest, task_assigned, task_mentioned, task_completed, project_updates, weekly_summary, mobile_push, desktop_push]
+          minItems: 1
+          required: true
+          description: Which specific preferences the user toggled in this session
+        email_notifications_enabled:
+          title: Email Notifications Enabled
+          type: boolean
+          required: false
+          description: Overall email notification toggle state after the change
+        push_notifications_enabled:
+          title: Push Notifications Enabled
+          type: boolean
+          required: false
+        digest_frequency:
+          title: Digest Frequency
+          type: string
+          enum: [realtime, daily, weekly, never]
+          required: false
+          description: Chosen cadence for the email summary digest
+        settings_section:
+          title: Settings Section
+          type: string
+          enum: [notifications, email, integrations, profile]
+          required: true
+          description: Which settings page section the change occurred in
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1101
+            retention_days: 30
+        workspace_id:
+          required: true

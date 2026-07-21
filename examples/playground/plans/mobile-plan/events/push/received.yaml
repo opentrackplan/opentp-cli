@@ -1,0 +1,21 @@
+opentp: 2026-01
+event:
+  key: push::received
+  taxonomy:
+    area: push
+    event: received
+    action: Push notification received
+  lifecycle:
+    status: active
+  payload:
+    all:
+      schema:
+        event_name:
+          value: push_received
+        campaign_id:
+          type: string
+          required: true
+        notification_type:
+          type: string
+          enum: [promo, transactional, reminder]
+          required: true

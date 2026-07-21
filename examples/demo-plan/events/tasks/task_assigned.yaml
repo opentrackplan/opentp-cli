@@ -1,0 +1,59 @@
+opentp: 2026-01
+
+event:
+  key: tasks::task_assigned
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User assigns or reassigns a task to a team member
+    priority_level: 2
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: task_assigned
+        task_id:
+          title: Task ID
+          type: string
+          required: true
+        project_id:
+          title: Project ID
+          type: string
+          required: true
+        is_self_assign:
+          title: Is Self-Assign
+          type: boolean
+          required: true
+          description: True when the user assigns the task to themselves
+        is_reassign:
+          title: Is Reassign
+          type: boolean
+          required: true
+          description: True when the task was previously assigned to a different person
+        assignee_role:
+          title: Assignee Role
+          type: string
+          enum: [owner, admin, member, guest]
+          required: false
+          description: Workspace role of the person receiving the task
+        assignment_context:
+          title: Assignment Context
+          type: string
+          enum: [task_detail, board_view, list_view, bulk_action, api]
+          required: true
+          description: UI surface where the assignment was made
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-801
+            retention_days: 365
+        workspace_id:
+          required: true

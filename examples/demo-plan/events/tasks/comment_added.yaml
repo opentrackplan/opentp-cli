@@ -1,0 +1,83 @@
+opentp: 2026-01
+
+event:
+  key: tasks::comment_added
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User posts a comment on a task
+    priority_level: 2
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: comment_added
+        task_id:
+          title: Task ID
+          type: string
+          required: true
+        project_id:
+          title: Project ID
+          type: string
+          required: true
+        comment_length_chars:
+          title: Comment Length (chars)
+          type: integer
+          minimum: 1
+          required: true
+          description: Character count of the comment body — never the content itself
+        has_mentions:
+          title: Has Mentions
+          type: boolean
+          required: true
+          description: Whether the comment @-mentions other users
+        mention_count:
+          title: Mention Count
+          type: integer
+          minimum: 0
+          required: false
+          description: Number of unique users mentioned
+        has_attachments:
+          title: Has Attachments
+          type: boolean
+          required: true
+        attachment_types:
+          title: Attachment Types
+          type: array
+          items:
+            type: string
+            enum: [image, video, document, code_snippet, link]
+          required: false
+          description: Types of files attached to the comment
+        is_thread_reply:
+          title: Is Thread Reply
+          type: boolean
+          required: true
+          description: Whether this is a reply in an existing thread vs top-level comment
+        comment_context:
+          title: Comment Context
+          type: string
+          enum: [task_detail, inbox, email_reply, api, slack_integration]
+          required: true
+          description: Where the comment was written from
+        reaction_count:
+          title: Reaction Count
+          type: integer
+          minimum: 0
+          required: false
+          description: Number of emoji reactions within 60s (for real-time feedback tracking)
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1201
+            retention_days: 365
+        workspace_id:
+          required: true

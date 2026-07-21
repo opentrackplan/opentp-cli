@@ -1,0 +1,96 @@
+opentp: 2026-01
+
+event:
+  key: integrations::integration_connected
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User connects a third-party integration to their workspace
+    priority_level: 2
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: integration_connected
+        integration_name:
+          title: Integration Name
+          type: string
+          dict: data/integrations
+          required: true
+          description: Which third-party service was connected
+        auth_type:
+          title: Auth Type
+          type: string
+          enum: [oauth2, api_key, webhook, saml]
+          required: true
+          description: Authentication mechanism used for the connection
+        scopes_granted:
+          title: Scopes Granted
+          type: array
+          items:
+            type: string
+            enum: [read, write, admin, delete, webhooks]
+          required: true
+          description: Permission scopes the user approved during connection
+        setup_time_seconds:
+          title: Setup Time (seconds)
+          type: number
+          minimum: 0
+          required: false
+          description: Wall-clock time from starting the flow to completing it
+        is_workspace_wide:
+          title: Workspace-Wide
+          type: boolean
+          required: true
+          description: Whether the integration applies to the entire workspace or just the user
+        connected_projects_count:
+          title: Connected Projects Count
+          type: integer
+          minimum: 0
+          required: false
+          description: Number of projects linked during initial setup
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1101
+            retention_days: 365
+        workspace_id:
+          required: true
+    ios:
+      schema:
+        app_id:
+          value: taskflow-ios
+        event_name:
+          value: integration_connected
+        integration_name:
+          title: Integration Name
+          type: string
+          dict: data/integrations
+          required: true
+        auth_type:
+          title: Auth Type
+          type: string
+          enum: [oauth2, api_key]
+          required: true
+        is_workspace_wide:
+          title: Workspace-Wide
+          type: boolean
+          required: true
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1101
+            retention_days: 365
+        workspace_id:
+          required: true

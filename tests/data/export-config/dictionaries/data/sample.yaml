@@ -1,0 +1,8 @@
+opentp: 2026-01
+
+dict:
+  type: string
+  values:
+    - alpha
+    - beta
+    - gamma

@@ -1,0 +1,96 @@
+{
+  "config": {
+    "opentp": "2026-01",
+    "info": {
+      "title": "Web App Tracking",
+      "version": "1.0.0",
+      "description": "Tracking plan for the web application"
+    },
+    "spec": {
+      "paths": {
+        "events": { "root": "events", "template": "{area}/{event}.yaml" }
+      },
+      "events": {
+        "taxonomy": {
+          "area": { "title": "Area", "type": "string", "required": true },
+          "event": { "title": "Event", "type": "string", "required": true },
+          "action": { "title": "Action", "type": "string", "required": true }
+        },
+        "payload": {
+          "targets": { "all": ["web"] },
+          "schema": {}
+        }
+      }
+    }
+  },
+  "events": [
+    {
+      "key": "auth::login",
+      "relativePath": "auth/login.yaml",
+      "taxonomy": { "area": "auth", "event": "login", "action": "User logs in via web" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "login" },
+          "auth_method": { "type": "string", "enum": ["email", "google", "github"], "required": true }
+        }
+      }
+    },
+    {
+      "key": "auth::signup",
+      "relativePath": "auth/signup.yaml",
+      "taxonomy": { "area": "auth", "event": "signup", "action": "User creates account" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "signup" },
+          "signup_method": { "type": "string", "enum": ["email", "google", "github"], "required": true },
+          "referral_code": { "type": "string", "required": false }
+        }
+      }
+    },
+    {
+      "key": "cart::add_item",
+      "relativePath": "cart/add_item.yaml",
+      "taxonomy": { "area": "cart", "event": "add_item", "action": "Item added to cart" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "add_to_cart" },
+          "product_id": { "type": "string", "required": true },
+          "quantity": { "type": "integer", "required": true },
+          "price": { "type": "number", "required": true }
+        }
+      }
+    },
+    {
+      "key": "cart::checkout",
+      "relativePath": "cart/checkout.yaml",
+      "taxonomy": { "area": "cart", "event": "checkout", "action": "User starts checkout" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "begin_checkout" },
+          "cart_total": { "type": "number", "required": true },
+          "item_count": { "type": "integer", "required": true }
+        }
+      }
+    },
+    {
+      "key": "search::query",
+      "relativePath": "search/query.yaml",
+      "taxonomy": { "area": "search", "event": "query", "action": "User searches" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "search" },
+          "query": { "type": "string", "required": true },
+          "results_count": { "type": "integer", "required": false }
+        }
+      }
+    }
+  ],
+  "dictionaries": {
+    "taxonomy/areas": ["auth", "cart", "search"]
+  }
+}

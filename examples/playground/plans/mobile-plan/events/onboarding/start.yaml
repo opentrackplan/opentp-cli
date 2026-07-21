@@ -1,0 +1,17 @@
+opentp: 2026-01
+event:
+  key: onboarding::start
+  taxonomy:
+    area: onboarding
+    event: start
+    action: User starts onboarding
+  lifecycle:
+    status: active
+  payload:
+    all:
+      schema:
+        event_name:
+          value: onboarding_start
+        os_version:
+          type: string
+          required: false

@@ -18,6 +18,72 @@ export function findConfigFile(rootPath: string): string | null {
   return null;
 }
 
+/** Traverse a nested object by dot-separated path and return the value */
+function getNestedValue(obj: unknown, fieldPath: string): unknown {
+  let cur: unknown = obj;
+  for (const key of fieldPath.split(".")) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[key];
+  }
+  return cur;
+}
+
+/** Throw if the given dot-path resolves to a falsy value */
+function requireField(obj: unknown, fieldPath: string): void {
+  if (!getNestedValue(obj, fieldPath)) {
+    throw new Error(`Missing required field: ${fieldPath}`);
+  }
+}
+
+const VALID_THEMES = ["dark", "light", "auto"] as const;
+const VALID_MODES = ["editor", "viewer"] as const;
+
+/** Validate optional export section */
+function validateExport(config: OpenTPConfig): void {
+  const exp = config.spec.export;
+  if (!exp) return;
+
+  if (exp.generators !== undefined) {
+    if (!Array.isArray(exp.generators)) {
+      throw new Error("spec.export.generators must be an array");
+    }
+    for (let i = 0; i < exp.generators.length; i++) {
+      const gen = exp.generators[i];
+      if (typeof gen.name !== "string" || gen.name.length === 0) {
+        throw new Error(`spec.export.generators[${i}].name must be a non-empty string`);
+      }
+      if (gen.target !== undefined && typeof gen.target !== "string") {
+        throw new Error(`spec.export.generators[${i}].target must be a string`);
+      }
+      if (gen.standalone !== undefined && typeof gen.standalone !== "boolean") {
+        throw new Error(`spec.export.generators[${i}].standalone must be a boolean`);
+      }
+    }
+  }
+
+  if (exp.bundle !== undefined && typeof exp.bundle !== "boolean") {
+    throw new Error("spec.export.bundle must be a boolean");
+  }
+}
+
+/** Validate optional ui section */
+function validateUi(config: OpenTPConfig): void {
+  const ui = config.spec.ui;
+  if (!ui) return;
+
+  if (ui.theme !== undefined && !(VALID_THEMES as readonly string[]).includes(ui.theme)) {
+    throw new Error(`spec.ui.theme must be one of: ${VALID_THEMES.join(", ")}`);
+  }
+
+  if (ui.mode !== undefined && !(VALID_MODES as readonly string[]).includes(ui.mode)) {
+    throw new Error(`spec.ui.mode must be one of: ${VALID_MODES.join(", ")}`);
+  }
+
+  if (ui.title !== undefined && typeof ui.title !== "string") {
+    throw new Error("spec.ui.title must be a string");
+  }
+}
+
 /**
  * Loads and validates opentp.yaml
  */
@@ -43,61 +109,24 @@ export function loadConfig(filePath: string): OpenTPConfig {
     );
   }
 
-  if (!config.info) {
-    throw new Error("Missing required field: info");
-  }
+  requireField(config, "info");
+  requireField(config, "info.title");
+  requireField(config, "info.version");
+  requireField(config, "spec");
+  requireField(config, "spec.paths");
+  requireField(config, "spec.paths.events");
+  requireField(config, "spec.paths.events.root");
+  requireField(config, "spec.paths.events.template");
+  requireField(config, "spec.events");
+  requireField(config, "spec.events.taxonomy");
+  requireField(config, "spec.events.payload");
+  requireField(config, "spec.events.payload.targets");
+  requireField(config, "spec.events.payload.targets.all");
+  requireField(config, "spec.events.payload.schema");
 
-  if (!config.info.title) {
-    throw new Error("Missing required field: info.title");
-  }
-
-  if (!config.info.version) {
-    throw new Error("Missing required field: info.version");
-  }
-
-  if (!config.spec) {
-    throw new Error("Missing required field: spec");
-  }
-
-  if (!config.spec.paths) {
-    throw new Error("Missing required field: spec.paths");
-  }
-
-  if (!config.spec.paths.events) {
-    throw new Error("Missing required field: spec.paths.events");
-  }
-
-  if (!config.spec.paths.events.root) {
-    throw new Error("Missing required field: spec.paths.events.root");
-  }
-
-  if (!config.spec.paths.events.template) {
-    throw new Error("Missing required field: spec.paths.events.template");
-  }
-
-  if (!config.spec.events) {
-    throw new Error("Missing required field: spec.events");
-  }
-
-  if (!config.spec.events.taxonomy) {
-    throw new Error("Missing required field: spec.events.taxonomy");
-  }
-
-  if (!config.spec.events.payload) {
-    throw new Error("Missing required field: spec.events.payload");
-  }
-
-  if (!config.spec.events.payload.targets) {
-    throw new Error("Missing required field: spec.events.payload.targets");
-  }
-
-  if (!config.spec.events.payload.targets.all) {
-    throw new Error("Missing required field: spec.events.payload.targets.all");
-  }
-
-  if (!config.spec.events.payload.schema) {
-    throw new Error("Missing required field: spec.events.payload.schema");
-  }
+  // Optional sections
+  validateExport(config);
+  validateUi(config);
 
   return config;
 }

@@ -1,0 +1,23 @@
+opentp: 2026-01
+event:
+  key: cart::add_item
+  taxonomy:
+    area: cart
+    event: add_item
+    action: Item added to cart
+  lifecycle:
+    status: active
+  payload:
+    web:
+      schema:
+        event_name:
+          value: add_to_cart
+        product_id:
+          type: string
+          required: true
+        quantity:
+          type: integer
+          required: true
+        price:
+          type: number
+          required: true

@@ -50,7 +50,7 @@
     "release": "npm run compile"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
@@ -62,6 +62,7 @@
     "vitest": "^4.0.16"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "yaml": "^2.8.1"
   }
 }

@@ -1,0 +1,70 @@
+{
+  "config": {
+    "opentp": "2026-01",
+    "info": {
+      "title": "Sample Tracking Plan",
+      "version": "1.0.0",
+      "description": "Sample data for development without opentp serve"
+    },
+    "spec": {
+      "paths": {
+        "events": { "root": "events", "template": "{area}/{event}.yaml" }
+      },
+      "events": {
+        "taxonomy": {
+          "area": { "title": "Area", "type": "string", "required": true },
+          "event": { "title": "Event", "type": "string", "required": true },
+          "action": { "title": "Action", "type": "string", "required": true }
+        },
+        "payload": {
+          "targets": { "all": ["web", "ios", "android"] },
+          "schema": {}
+        }
+      }
+    }
+  },
+  "events": [
+    {
+      "key": "auth::login",
+      "relativePath": "auth/login.yaml",
+      "taxonomy": { "area": "auth", "event": "login", "action": "User logs in" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "login" },
+          "auth_method": { "type": "string", "enum": ["email", "google", "github"], "required": true },
+          "user_id": { "type": "string", "required": false, "pii": { "kind": "user_id" } }
+        }
+      }
+    },
+    {
+      "key": "auth::logout",
+      "relativePath": "auth/logout.yaml",
+      "taxonomy": { "area": "auth", "event": "logout", "action": "User logs out" },
+      "lifecycle": { "status": "active" },
+      "payload": { "schema": { "event_name": { "value": "logout" } } }
+    },
+    {
+      "key": "dashboard::view",
+      "relativePath": "dashboard/view.yaml",
+      "taxonomy": { "area": "dashboard", "event": "view", "action": "Views dashboard" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "dashboard_view" },
+          "widgets_count": { "type": "number", "required": false }
+        }
+      }
+    },
+    {
+      "key": "legacy::old_event",
+      "relativePath": "legacy/old_event.yaml",
+      "taxonomy": { "area": "legacy", "event": "old_event", "action": "Legacy event" },
+      "lifecycle": { "status": "deprecated" },
+      "payload": { "schema": {} }
+    }
+  ],
+  "dictionaries": {
+    "taxonomy/areas": ["auth", "dashboard", "legacy"]
+  }
+}

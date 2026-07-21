@@ -1,0 +1,5 @@
+**/node_modules
+**/dist
+.git
+examples/demo-plan/test-app
+examples/playground/node_modules

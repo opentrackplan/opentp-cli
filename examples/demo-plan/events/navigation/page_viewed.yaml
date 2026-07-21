@@ -1,0 +1,58 @@
+opentp: 2026-01
+
+event:
+  key: navigation::page_viewed
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User navigates to and fully renders a page within the app
+    priority_level: 2
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: page_viewed
+        page_name:
+          title: Page Name
+          type: string
+          enum: [dashboard, project_board, project_list, project_timeline, task_detail, inbox, settings_profile, settings_workspace, settings_billing, settings_integrations, team_members, analytics_overview, roadmap, search_results]
+          required: true
+          description: Logical name of the page — decoupled from URL so renames don't break metrics
+        page_path:
+          title: Page Path
+          type: string
+          required: true
+          pattern: "^/[a-z0-9/_-]*$"
+          description: URL path without query string or fragment (e.g. /projects/abc/board)
+        referrer_page_name:
+          title: Referrer Page Name
+          type: string
+          enum: [dashboard, project_board, project_list, project_timeline, task_detail, inbox, settings_profile, settings_workspace, settings_billing, settings_integrations, team_members, analytics_overview, roadmap, search_results, external, direct, email_notification]
+          required: false
+          description: Logical name of the previous page — enables funnel analysis
+        load_time_ms:
+          title: Load Time (ms)
+          type: integer
+          minimum: 0
+          required: false
+          description: Time from navigation start to LCP (Largest Contentful Paint) in milliseconds
+        is_first_visit:
+          title: Is First Visit
+          type: boolean
+          required: false
+          description: True when this is the user's first ever visit to this page name
+        user_id:
+          required: false
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1201
+            retention_days: 30
+        workspace_id:
+          required: false

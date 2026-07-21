@@ -1,0 +1,86 @@
+opentp: 2026-01
+
+event:
+  key: analytics::report_exported
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User exports an analytics report from the dashboard
+    priority_level: 3
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: report_exported
+        report_type:
+          title: Report Type
+          type: string
+          enum: [velocity, burndown, cumulative_flow, cycle_time, lead_time, throughput, custom]
+          required: true
+          description: The kind of analytics report exported
+        export_format:
+          title: Export Format
+          type: string
+          dict: data/report-formats
+          required: true
+          description: File format of the exported report
+        date_range_days:
+          title: Date Range (days)
+          type: integer
+          minimum: 1
+          maximum: 365
+          required: true
+          description: Number of days covered by the report
+        row_count:
+          title: Row Count
+          type: integer
+          minimum: 0
+          required: false
+          description: Number of data rows in the export
+        file_size_kb:
+          title: File Size (KB)
+          type: number
+          minimum: 0
+          required: false
+          description: Approximate file size in kilobytes
+        includes_charts:
+          title: Includes Charts
+          type: boolean
+          required: true
+          description: Whether the export contains visual charts (not just raw data)
+        project_ids:
+          title: Project IDs
+          type: array
+          items:
+            type: string
+          required: true
+          description: Projects included in the report scope
+        filters_applied:
+          title: Filters Applied
+          type: array
+          items:
+            type: string
+            enum: [assignee, status, priority, label, sprint, date_range, task_type]
+          required: false
+          description: Report filters active at time of export
+        generation_time_ms:
+          title: Generation Time (ms)
+          type: number
+          minimum: 0
+          required: false
+          description: Time taken to generate the report server-side
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-1301
+            retention_days: 90
+        workspace_id:
+          required: true

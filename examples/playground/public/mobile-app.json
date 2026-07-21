@@ -1,0 +1,91 @@
+{
+  "config": {
+    "opentp": "2026-01",
+    "info": {
+      "title": "Mobile App Tracking",
+      "version": "2.0.0",
+      "description": "Tracking plan for iOS and Android apps"
+    },
+    "spec": {
+      "paths": {
+        "events": { "root": "events", "template": "{area}/{event}.yaml" }
+      },
+      "events": {
+        "taxonomy": {
+          "area": { "title": "Area", "type": "string", "required": true },
+          "event": { "title": "Event", "type": "string", "required": true },
+          "action": { "title": "Action", "type": "string", "required": true }
+        },
+        "payload": {
+          "targets": { "all": ["ios", "android"] },
+          "schema": {}
+        }
+      }
+    }
+  },
+  "events": [
+    {
+      "key": "onboarding::start",
+      "relativePath": "onboarding/start.yaml",
+      "taxonomy": { "area": "onboarding", "event": "start", "action": "User starts onboarding" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "onboarding_start" },
+          "os_version": { "type": "string", "required": false }
+        }
+      }
+    },
+    {
+      "key": "onboarding::complete",
+      "relativePath": "onboarding/complete.yaml",
+      "taxonomy": { "area": "onboarding", "event": "complete", "action": "User finishes onboarding" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "onboarding_complete" },
+          "steps_completed": { "type": "integer", "required": true }
+        }
+      }
+    },
+    {
+      "key": "push::received",
+      "relativePath": "push/received.yaml",
+      "taxonomy": { "area": "push", "event": "received", "action": "Push notification received" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "push_received" },
+          "campaign_id": { "type": "string", "required": true },
+          "notification_type": { "type": "string", "enum": ["promo", "transactional", "reminder"], "required": true }
+        }
+      }
+    },
+    {
+      "key": "push::tapped",
+      "relativePath": "push/tapped.yaml",
+      "taxonomy": { "area": "push", "event": "tapped", "action": "User taps push notification" },
+      "lifecycle": { "status": "active" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "push_tapped" },
+          "campaign_id": { "type": "string", "required": true }
+        }
+      }
+    },
+    {
+      "key": "app::background",
+      "relativePath": "app/background.yaml",
+      "taxonomy": { "area": "app", "event": "background", "action": "App goes to background" },
+      "lifecycle": { "status": "deprecated" },
+      "payload": {
+        "schema": {
+          "event_name": { "value": "app_background" }
+        }
+      }
+    }
+  ],
+  "dictionaries": {
+    "taxonomy/areas": ["onboarding", "push", "app"]
+  }
+}

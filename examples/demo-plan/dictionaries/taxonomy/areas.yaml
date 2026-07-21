@@ -1,0 +1,15 @@
+opentp: 2026-01
+dict:
+  type: string
+  values:
+    - auth
+    - profile
+    - search
+    - content
+    - billing
+    - dashboard
+    - admin
+    - onboarding
+    - settings
+    - workspace
+    - reporting

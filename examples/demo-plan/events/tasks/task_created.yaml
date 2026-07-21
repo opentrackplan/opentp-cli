@@ -1,0 +1,66 @@
+opentp: 2026-01
+
+event:
+  key: tasks::task_created
+
+  lifecycle:
+    status: active
+
+  taxonomy:
+    action: User creates a new task within a project
+    priority_level: 1
+
+  payload:
+    web:
+      schema:
+        app_id:
+          value: taskflow-web
+        event_name:
+          value: task_created
+        task_id:
+          title: Task ID
+          type: string
+          required: true
+        project_id:
+          title: Project ID
+          type: string
+          required: true
+        task_type:
+          title: Task Type
+          type: string
+          enum: [feature, bug, improvement, research, design, documentation, chore]
+          required: true
+        priority:
+          title: Priority
+          type: string
+          enum: [no_priority, low, medium, high, urgent]
+          required: true
+        has_due_date:
+          title: Has Due Date
+          type: boolean
+          required: true
+        has_assignee:
+          title: Has Assignee
+          type: boolean
+          required: true
+        has_labels:
+          title: Has Labels
+          type: boolean
+          required: true
+          description: Whether any labels were attached at creation
+        creation_context:
+          title: Creation Context
+          type: string
+          enum: [board_view, list_view, quick_create, command_palette, api, import, copy_task]
+          required: true
+          description: How the task was initiated — indicates which surface is most used
+        user_id:
+          required: true
+          pii:
+            kind: user_id
+            masker: hash
+            owner: analytics
+            jira: DATA-601
+            retention_days: 365
+        workspace_id:
+          required: true

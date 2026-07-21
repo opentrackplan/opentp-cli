@@ -1,0 +1,225 @@
+@import "tailwindcss";
+
+/* Define theme tokens using Tailwind v4's @theme directive */
+@theme {
+  --color-surface-primary: #0a0a0f;
+  --color-surface-secondary: #111118;
+  --color-surface-tertiary: #1a1a24;
+  --color-surface-hover: #1e1e2a;
+  --color-surface-active: #252532;
+  --color-surface-input: #111118;
+
+  --color-edge-primary: #1e1e2a;
+  --color-edge-secondary: #2a2a3a;
+  --color-edge-active: #3a3a4a;
+
+  --color-content-primary: #e2e2e8;
+  --color-content-secondary: #a0a0b0;
+  --color-content-tertiary: #64748b;
+  --color-content-muted: #404050;
+  --color-content-inverse: #0a0a0f;
+
+  --color-accent-blue: #3b82f6;
+  --color-accent-blue-bg: oklch(from #3b82f6 l c h / 0.1);
+  --color-accent-blue-border: oklch(from #3b82f6 l c h / 0.2);
+
+  --color-accent-green: #34d399;
+  --color-accent-green-bg: oklch(from #34d399 l c h / 0.1);
+  --color-accent-green-border: oklch(from #34d399 l c h / 0.2);
+
+  --color-accent-amber: #fbbf24;
+  --color-accent-amber-bg: oklch(from #fbbf24 l c h / 0.1);
+  --color-accent-amber-border: oklch(from #fbbf24 l c h / 0.2);
+
+  --color-accent-red: #f87171;
+  --color-accent-red-bg: oklch(from #f87171 l c h / 0.1);
+  --color-accent-red-border: oklch(from #f87171 l c h / 0.2);
+
+  --color-accent-purple: #a855f7;
+  --color-accent-purple-bg: oklch(from #a855f7 l c h / 0.1);
+  --color-accent-purple-border: oklch(from #a855f7 l c h / 0.2);
+
+  --color-accent-indigo: #6366f1;
+  --color-accent-indigo-bg: oklch(from #6366f1 l c h / 0.1);
+  --color-accent-indigo-border: oklch(from #6366f1 l c h / 0.2);
+
+  --color-accent-teal: #14b8a6;
+  --color-accent-teal-bg: oklch(from #14b8a6 l c h / 0.1);
+  --color-accent-teal-border: oklch(from #14b8a6 l c h / 0.2);
+
+  --color-accent-cyan: #06b6d4;
+  --color-accent-cyan-bg: oklch(from #06b6d4 l c h / 0.1);
+  --color-accent-cyan-border: oklch(from #06b6d4 l c h / 0.2);
+
+  --color-accent-pink: #ec4899;
+  --color-accent-pink-bg: oklch(from #ec4899 l c h / 0.1);
+  --color-accent-pink-border: oklch(from #ec4899 l c h / 0.2);
+
+  --color-accent-orange: #f97316;
+  --color-accent-orange-bg: oklch(from #f97316 l c h / 0.1);
+  --color-accent-orange-border: oklch(from #f97316 l c h / 0.2);
+
+  --color-accent-violet: #8b5cf6;
+  --color-accent-violet-bg: oklch(from #8b5cf6 l c h / 0.1);
+  --color-accent-violet-border: oklch(from #8b5cf6 l c h / 0.2);
+
+  --color-accent-emerald: #34d399;
+  --color-accent-emerald-bg: oklch(from #34d399 l c h / 0.1);
+  --color-accent-emerald-border: oklch(from #34d399 l c h / 0.2);
+
+  --color-accent-rose: #fb7185;
+  --color-accent-rose-bg: oklch(from #fb7185 l c h / 0.1);
+  --color-accent-rose-border: oklch(from #fb7185 l c h / 0.2);
+}
+
+/* Dark theme (default) - reassign tokens to dark values */
+:root,
+[data-theme="dark"] {
+  --color-surface-primary: #0a0a0f;
+  --color-surface-secondary: #111118;
+  --color-surface-tertiary: #1a1a24;
+  --color-surface-hover: #1e1e2a;
+  --color-surface-active: #252532;
+  --color-surface-input: #111118;
+
+  --color-edge-primary: #1e1e2a;
+  --color-edge-secondary: #2a2a3a;
+  --color-edge-active: #3a3a4a;
+
+  --color-content-primary: #e2e2e8;
+  --color-content-secondary: #a0a0b0;
+  --color-content-tertiary: #64748b;
+  --color-content-muted: #404050;
+  --color-content-inverse: #0a0a0f;
+
+  --color-accent-blue: #3b82f6;
+  --color-accent-blue-bg: oklch(from #3b82f6 l c h / 0.1);
+  --color-accent-blue-border: oklch(from #3b82f6 l c h / 0.2);
+
+  --color-accent-green: #34d399;
+  --color-accent-green-bg: oklch(from #34d399 l c h / 0.1);
+  --color-accent-green-border: oklch(from #34d399 l c h / 0.2);
+
+  --color-accent-amber: #fbbf24;
+  --color-accent-amber-bg: oklch(from #fbbf24 l c h / 0.1);
+  --color-accent-amber-border: oklch(from #fbbf24 l c h / 0.2);
+
+  --color-accent-red: #f87171;
+  --color-accent-red-bg: oklch(from #f87171 l c h / 0.1);
+  --color-accent-red-border: oklch(from #f87171 l c h / 0.2);
+
+  --color-accent-purple: #a855f7;
+  --color-accent-purple-bg: oklch(from #a855f7 l c h / 0.1);
+  --color-accent-purple-border: oklch(from #a855f7 l c h / 0.2);
+
+  --color-accent-indigo: #6366f1;
+  --color-accent-indigo-bg: oklch(from #6366f1 l c h / 0.1);
+  --color-accent-indigo-border: oklch(from #6366f1 l c h / 0.2);
+
+  --color-accent-teal: #14b8a6;
+  --color-accent-teal-bg: oklch(from #14b8a6 l c h / 0.1);
+  --color-accent-teal-border: oklch(from #14b8a6 l c h / 0.2);
+
+  --color-accent-cyan: #06b6d4;
+  --color-accent-cyan-bg: oklch(from #06b6d4 l c h / 0.1);
+  --color-accent-cyan-border: oklch(from #06b6d4 l c h / 0.2);
+
+  --color-accent-pink: #ec4899;
+  --color-accent-pink-bg: oklch(from #ec4899 l c h / 0.1);
+  --color-accent-pink-border: oklch(from #ec4899 l c h / 0.2);
+
+  --color-accent-orange: #f97316;
+  --color-accent-orange-bg: oklch(from #f97316 l c h / 0.1);
+  --color-accent-orange-border: oklch(from #f97316 l c h / 0.2);
+
+  --color-accent-violet: #8b5cf6;
+  --color-accent-violet-bg: oklch(from #8b5cf6 l c h / 0.1);
+  --color-accent-violet-border: oklch(from #8b5cf6 l c h / 0.2);
+
+  --color-accent-emerald: #34d399;
+  --color-accent-emerald-bg: oklch(from #34d399 l c h / 0.1);
+  --color-accent-emerald-border: oklch(from #34d399 l c h / 0.2);
+
+  --color-accent-rose: #fb7185;
+  --color-accent-rose-bg: oklch(from #fb7185 l c h / 0.1);
+  --color-accent-rose-border: oklch(from #fb7185 l c h / 0.2);
+}
+
+/* Light theme - override tokens with light values */
+[data-theme="light"] {
+  --color-surface-primary: #ffffff;
+  --color-surface-secondary: #f8f9fa;
+  --color-surface-tertiary: #f1f3f5;
+  --color-surface-hover: #e9ecef;
+  --color-surface-active: #dee2e6;
+  --color-surface-input: #ffffff;
+
+  --color-edge-primary: #e2e8f0;
+  --color-edge-secondary: #cbd5e1;
+  --color-edge-active: #94a3b8;
+
+  --color-content-primary: #1a1a2e;
+  --color-content-secondary: #475569;
+  --color-content-tertiary: #64748b;
+  --color-content-muted: #94a3b8;
+  --color-content-inverse: #ffffff;
+
+  --color-accent-blue: #2563eb;
+  --color-accent-blue-bg: oklch(from #2563eb l c h / 0.08);
+  --color-accent-blue-border: oklch(from #2563eb l c h / 0.2);
+
+  --color-accent-green: #059669;
+  --color-accent-green-bg: oklch(from #059669 l c h / 0.08);
+  --color-accent-green-border: oklch(from #059669 l c h / 0.2);
+
+  --color-accent-amber: #d97706;
+  --color-accent-amber-bg: oklch(from #d97706 l c h / 0.08);
+  --color-accent-amber-border: oklch(from #d97706 l c h / 0.2);
+
+  --color-accent-red: #dc2626;
+  --color-accent-red-bg: oklch(from #dc2626 l c h / 0.08);
+  --color-accent-red-border: oklch(from #dc2626 l c h / 0.2);
+
+  --color-accent-purple: #9333ea;
+  --color-accent-purple-bg: oklch(from #9333ea l c h / 0.08);
+  --color-accent-purple-border: oklch(from #9333ea l c h / 0.2);
+
+  --color-accent-indigo: #4f46e5;
+  --color-accent-indigo-bg: oklch(from #4f46e5 l c h / 0.08);
+  --color-accent-indigo-border: oklch(from #4f46e5 l c h / 0.2);
+
+  --color-accent-teal: #0d9488;
+  --color-accent-teal-bg: oklch(from #0d9488 l c h / 0.08);
+  --color-accent-teal-border: oklch(from #0d9488 l c h / 0.2);
+
+  --color-accent-cyan: #0891b2;
+  --color-accent-cyan-bg: oklch(from #0891b2 l c h / 0.08);
+  --color-accent-cyan-border: oklch(from #0891b2 l c h / 0.2);
+
+  --color-accent-pink: #db2777;
+  --color-accent-pink-bg: oklch(from #db2777 l c h / 0.08);
+  --color-accent-pink-border: oklch(from #db2777 l c h / 0.2);
+
+  --color-accent-orange: #ea580c;
+  --color-accent-orange-bg: oklch(from #ea580c l c h / 0.08);
+  --color-accent-orange-border: oklch(from #ea580c l c h / 0.2);
+
+  --color-accent-violet: #7c3aed;
+  --color-accent-violet-bg: oklch(from #7c3aed l c h / 0.08);
+  --color-accent-violet-border: oklch(from #7c3aed l c h / 0.2);
+
+  --color-accent-emerald: #059669;
+  --color-accent-emerald-bg: oklch(from #059669 l c h / 0.08);
+  --color-accent-emerald-border: oklch(from #059669 l c h / 0.2);
+
+  --color-accent-rose: #e11d48;
+  --color-accent-rose-bg: oklch(from #e11d48 l c h / 0.08);
+  --color-accent-rose-border: oklch(from #e11d48 l c h / 0.2);
+}
+
+/* Ensure all clickable elements show pointer cursor */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+summary {
+  cursor: pointer;
+}
