@@ -33,6 +33,15 @@ Each step is either:
 - a string step name (e.g. `lower`)
 - a single-key object with parameters (e.g. `replace: { from: " ", to: "_" }`)
 
+An unknown step (neither built in nor loaded with `--external-transforms`) or a malformed step (for example a mapping with two keys) is a configuration error. It is reported once, against `opentp.yaml`, at `spec.events.x-opentp.keygen.transforms.<pipeline>[<index>]`:
+
+```
+[opentp.yaml]
+  ✗ spec.events.x-opentp.keygen.transforms.slug[1]: Unknown transform step 'slugify' (custom steps are loaded with --external-transforms)
+```
+
+Until it is fixed, `validate` and `fix` exit with code `1` without generating keys (`fix` rewrites nothing), and `generate` refuses to export the plan.
+
 ## Using Transforms
 
 ```yaml
@@ -59,6 +68,8 @@ Load additional transform steps from a directory:
 ```bash
 opentp validate --external-transforms ./my-transforms
 ```
+
+The directory is resolved against the current directory, and each `<dir>/<name>/index.js` is loaded as an ES module or CommonJS module, depending on the nearest `package.json`. Pass the same flag to `opentp fix` and `opentp generate` when the keygen pipelines use custom steps.
 
 Example step module:
 

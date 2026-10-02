@@ -49,8 +49,8 @@ describe("json generator", () => {
     expect(jsonGenerator.name).toBe("json");
   });
 
-  it("should generate valid JSON to stdout", () => {
-    const result = jsonGenerator.generate(mockContext);
+  it("should generate valid JSON to stdout", async () => {
+    const result = await jsonGenerator.generate(mockContext);
     expect(result.stdout).toBeDefined();
     expect(result.files).toBeUndefined();
 
@@ -64,8 +64,8 @@ describe("json generator", () => {
     expect(parsed.dictionaries.actions).toEqual(["click", "view", "submit"]);
   });
 
-  it("should output to file when --output is specified", () => {
-    const result = jsonGenerator.generate({
+  it("should output to file when --output is specified", async () => {
+    const result = await jsonGenerator.generate({
       ...mockContext,
       options: { output: "./output/events.json" },
     });
@@ -78,18 +78,30 @@ describe("json generator", () => {
     expect(parsed.events).toHaveLength(1);
   });
 
-  it("should pretty print by default", () => {
-    const result = jsonGenerator.generate(mockContext);
+  it("should pretty print by default", async () => {
+    const result = await jsonGenerator.generate(mockContext);
     expect(result.stdout).toContain("\n");
     expect(result.stdout).toContain("  ");
   });
 
-  it("should not pretty print when --no-pretty", () => {
-    const result = jsonGenerator.generate({
+  it("should not pretty print when --no-pretty", async () => {
+    const result = await jsonGenerator.generate({
       ...mockContext,
       options: { pretty: false },
     });
 
-    expect(result.stdout).not.toContain("\n");
+    // One line, terminated by a newline
+    expect(result.stdout?.endsWith("}\n")).toBe(true);
+    expect(result.stdout?.trimEnd()).not.toContain("\n");
+  });
+
+  it("should end stdout and file content with a newline", async () => {
+    const toStdout = await jsonGenerator.generate(mockContext);
+    const toFile = await jsonGenerator.generate({
+      ...mockContext,
+      options: { output: "out.json" },
+    });
+    expect(toStdout.stdout?.endsWith("}\n")).toBe(true);
+    expect(toFile.files?.[0].content).toBe(toStdout.stdout);
   });
 });

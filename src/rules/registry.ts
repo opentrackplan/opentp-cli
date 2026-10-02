@@ -34,25 +34,32 @@ export function hasRule(name: string): boolean {
 }
 
 /**
- * Load external rules from a directory
+ * Load external rules from a directory.
+ *
+ * Every first-level `<dir>/<name>/index.js` is imported (ESM or CommonJS, following the nearest
+ * package.json). A relative `dirPath` is resolved against the current working directory.
  * @param dirPath - Path to directory containing rule folders
+ * @throws when the directory does not exist
  */
 export async function loadExternalRules(dirPath: string): Promise<void> {
   const fs = await import("node:fs");
   const path = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
 
-  if (!fs.existsSync(dirPath)) {
-    throw new Error(`External rules directory not found: ${dirPath}`);
+  const dir = path.resolve(dirPath);
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new Error(`External rules directory not found: ${dir}`);
   }
 
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const rulePath = path.join(dirPath, entry.name, "index.js");
+      const rulePath = path.resolve(dir, entry.name, "index.js");
       if (fs.existsSync(rulePath)) {
         try {
-          const module = await import(rulePath);
+          // A file URL, not a path: bare paths are module specifiers (and break on Windows)
+          const module = await import(pathToFileURL(rulePath).href);
           const rule = module.default || module[entry.name];
           if (rule && typeof rule.validate === "function") {
             registerRule(rule);
@@ -67,6 +74,10 @@ export async function loadExternalRules(dirPath: string): Promise<void> {
 
 /**
  * Validate a value against a set of rules
+ *
+ * A rule that throws (or rejects, or returns something that is not a result object) does not abort
+ * the run: it produces a `CHECK_FAILED` error "check <name> failed: <message>" for this value.
+ *
  * @param value - The value to validate
  * @param rules - Rules configuration { ruleName: params }
  * @param context - Validation context
@@ -90,7 +101,27 @@ export async function validateWithRules(
       continue;
     }
 
-    const result = await rule.validate(value, params, context);
+    let result: RuleResult;
+    try {
+      result = await rule.validate(value, params, context);
+    } catch (err) {
+      errors.push({
+        valid: false,
+        error: `check ${ruleName} failed: ${err instanceof Error ? err.message : String(err)}`,
+        code: "CHECK_FAILED",
+      });
+      continue;
+    }
+
+    if (typeof result !== "object" || result === null) {
+      errors.push({
+        valid: false,
+        error: `check ${ruleName} failed: expected a result object, got ${result === null ? "null" : typeof result}`,
+        code: "CHECK_FAILED",
+      });
+      continue;
+    }
+
     if (!result.valid) {
       errors.push(result);
     }

@@ -34,25 +34,32 @@ export function getGeneratorNames(): string[] {
 }
 
 /**
- * Load external generators from a directory
+ * Load external generators from a directory.
+ *
+ * Every first-level `<dir>/<name>/index.js` is imported (ESM or CommonJS, following the nearest
+ * package.json). A relative `dirPath` is resolved against the current working directory.
  * @param dirPath - Path to directory containing generator folders
+ * @throws when the directory does not exist
  */
 export async function loadExternalGenerators(dirPath: string): Promise<void> {
   const fs = await import("node:fs");
   const path = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
 
-  if (!fs.existsSync(dirPath)) {
-    throw new Error(`External generators directory not found: ${dirPath}`);
+  const dir = path.resolve(dirPath);
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new Error(`External generators directory not found: ${dir}`);
   }
 
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      const generatorPath = path.join(dirPath, entry.name, "index.js");
+      const generatorPath = path.resolve(dir, entry.name, "index.js");
       if (fs.existsSync(generatorPath)) {
         try {
-          const module = await import(generatorPath);
+          // A file URL, not a path: bare paths are module specifiers (and break on Windows)
+          const module = await import(pathToFileURL(generatorPath).href);
           const generator = module.default || module[entry.name];
           if (generator && typeof generator.generate === "function") {
             registerGenerator(generator);

@@ -5,10 +5,22 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # release.yml runs this workflow as its `verify` job, so a tag is released only after the same gates pass.
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    name: test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Dev tooling (vite 7 / vitest 4) needs ^20.19 || >=22.12; keep in sync with package.json "engines".
+        node-version: ['20', '22']
 
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - name: Install dependencies
@@ -30,8 +42,91 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Type-check (src)
+        run: npx tsc --noEmit -p .
+
+      - name: Type-check (src + specs)
+        run: npx tsc --noEmit -p tsconfig.test.json
+
       - name: Test
         run: npm test
 
       - name: Build
         run: npm run build
+
+      - name: Smoke test (fixtures)
+        run: |
+          set -euo pipefail
+          node dist/index.cjs --version
+
+          # coverage-valid: exit 0 and exactly 4 events loaded (a dropped event file would still exit 0).
+          rc=0
+          out="$(node dist/index.cjs validate --root tests/data/coverage-valid 2>&1)" || rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::coverage-valid: expected exit code 0, got ${rc}"
+            exit 1
+          fi
+          if ! grep -Eq 'count=4$' <<<"$out"; then
+            echo "::error::coverage-valid: expected 'count=4' in the output"
+            exit 1
+          fi
+
+          # coverage-invalid: must fail with validation errors.
+          rc=0
+          out="$(node dist/index.cjs validate --root tests/data/coverage-invalid 2>&1)" || rc=$?
+          echo "$out" | tail -n 3
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::coverage-invalid: expected a non-zero exit code, got 0"
+            exit 1
+          fi
+          if ! grep -q 'Validation failed' <<<"$out"; then
+            echo "::error::coverage-invalid: exit code ${rc}, but no 'Validation failed' summary (crash?)"
+            exit 1
+          fi
+
+          # Strict arguments: an unknown command is a usage error (exit 2), never a silent validate.
+          rc=0
+          node dist/index.cjs valdiate --root tests/data/coverage-valid >/dev/null 2>&1 || rc=$?
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::unknown command: expected exit code 2, got ${rc}"
+            exit 1
+          fi
+
+          # stdout carries only command output: one JSON document with --json -v, and piped generator
+          # output byte-identical to --output.
+          node dist/index.cjs validate --json -v --root tests/data/coverage-valid 2>/dev/null \
+            | node -e 'JSON.parse(require("fs").readFileSync(0, "utf8"))'
+          node dist/index.cjs generate json --root tests/data/coverage-valid > "$RUNNER_TEMP/stdout.json"
+          node dist/index.cjs generate json --root tests/data/coverage-valid -o "$RUNNER_TEMP/output.json"
+          cmp "$RUNNER_TEMP/stdout.json" "$RUNNER_TEMP/output.json"
+
+      - name: Read supported spec version
+        id: spec
+        run: echo "version=$(node -p "require('./package.json').specVersion")" >> "$GITHUB_OUTPUT"
+
+      # Checked out after lint/type-check/test so its files never reach those tools.
+      - name: Checkout opentp-spec at the supported spec tag
+        uses: actions/checkout@v4
+        with:
+          repository: opentrackplan/opentp-spec
+          ref: ${{ steps.spec.outputs.version }}
+          path: opentp-spec
+          persist-credentials: false
+
+      - name: Smoke test (opentp-spec examples)
+        run: |
+          set -euo pipefail
+          for example in simple full; do
+            rc=0
+            out="$(node dist/index.cjs validate --root "opentp-spec/examples/${example}" 2>&1)" || rc=$?
+            echo "examples/${example}: ${out}"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::opentp-spec ${{ steps.spec.outputs.version }} examples/${example}: expected exit code 0, got ${rc}"
+              exit 1
+            fi
+            if ! grep -Eq 'count=[1-9][0-9]*$' <<<"$out"; then
+              echo "::error::opentp-spec ${{ steps.spec.outputs.version }} examples/${example}: no events were loaded"
+              exit 1
+            fi
+          done

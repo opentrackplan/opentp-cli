@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTransform, createTransforms, getStep, getStepNames } from "./index";
+import { createTransform, createTransforms, getStep, getStepNames, getStepProblem } from "./index";
 
 describe("transforms/index", () => {
   describe("getStepNames", () => {
@@ -54,10 +54,41 @@ describe("transforms/index", () => {
       expect(transform("HELLO WORLD")).toBe("hello");
     });
 
-    it("handles unknown step gracefully", () => {
-      const transform = createTransform(["unknown"]);
-      // Should return value unchanged
-      expect(transform("hello")).toBe("hello");
+    it("throws on an unknown step instead of skipping it", () => {
+      expect(() => createTransform(["lower", "unknown"])).toThrow(
+        "Unknown transform step 'unknown' (custom steps are loaded with --external-transforms)",
+      );
+      expect(() => createTransform([{ unknown: { a: 1 } }])).toThrow(
+        "Unknown transform step 'unknown'",
+      );
+    });
+
+    it.each([
+      [{ lower: true, upper: true }, '{"lower":true,"upper":true}'],
+      [{}, "{}"],
+      [["lower"], '["lower"]'],
+      [42, "42"],
+      [null, "null"],
+    ])("throws on a malformed step %j", (step, shown) => {
+      expect(() => createTransform([step as unknown as string])).toThrow(
+        `Invalid transform step ${shown}: expected a step name or a single-key mapping { <step>: <params> }`,
+      );
+    });
+  });
+
+  describe("getStepProblem", () => {
+    it("accepts registered steps in both forms", () => {
+      expect(getStepProblem("lower")).toBeNull();
+      expect(getStepProblem({ truncate: 5 })).toBeNull();
+    });
+
+    it("reports unknown and malformed steps", () => {
+      expect(getStepProblem("slugify")).toBe(
+        "Unknown transform step 'slugify' (custom steps are loaded with --external-transforms)",
+      );
+      expect(getStepProblem(undefined)).toBe(
+        "Invalid transform step undefined: expected a step name or a single-key mapping { <step>: <params> }",
+      );
     });
   });
 

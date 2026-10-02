@@ -19,9 +19,13 @@ opentp fix [options]
 
 | Option | Description |
 |--------|-------------|
-| `--root <path>` | Project root directory |
-| `--verbose` | Show detailed output |
-| `--external-transforms <path>` | Load custom transforms (can be repeated) |
+| `--root <path>`, `-r <path>` | Project root directory |
+| `--verbose`, `-v` | Debug logs (on stderr) |
+| `--json` | Print the validation result as one JSON document on stdout |
+| `--external-transforms <dir>` | Load custom transforms (repeatable) |
+| `--external-rules <dir>` | Load custom validation checks for the validation that follows (repeatable) |
+
+`opentp validate --fix` (or `-f`) is the same as `opentp fix`. `--external-*` directories are resolved against the current directory.
 
 ## Examples
 
@@ -31,14 +35,18 @@ opentp fix [options]
 opentp fix
 ```
 
-Output:
+Output (log lines, on stderr):
 
 ```
-Fixed 3 events:
-  events/auth/login.yaml: auth::login_click → auth::login
-  events/dashboard/view.yaml: dashboard_view → dashboard::view
-  events/onboarding/step.yaml: step_complete → onboarding::step_complete
+Fixed event key file="auth/2/false/ignored_application_id_dict.yaml"
+Fixed event key file="auth/3/false/login_experiment.yaml"
+Events fixed count=2
+✓ All events are valid count=4
 ```
+
+After rewriting keys, `fix` validates the plan like `opentp validate`, and the exit code comes from that validation (`0` or `1`). With `--json`, stdout holds only the validation JSON document; the `Fixed event key` lines stay on stderr.
+
+`fix` exits with code `2` and changes nothing when `spec.events.x-opentp.keygen` is not configured, when `opentp.yaml` is missing or cannot be loaded, or when the arguments are invalid. When `opentp.yaml` has configuration problems (for example an unknown transform step in a keygen pipeline), no key is rewritten, and the problems are reported by the validation (exit code `1`).
 
 ## How It Works
 

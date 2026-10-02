@@ -1,0 +1,5 @@
+opentp: 2026-01
+
+# Typo: "evnt" instead of "event". The file cannot be loaded.
+evnt:
+  key: auth::missing_event::p1::internal-false

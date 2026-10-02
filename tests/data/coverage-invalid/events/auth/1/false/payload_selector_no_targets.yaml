@@ -1,0 +1,18 @@
+opentp: 2026-01
+
+event:
+  key: auth::payload_selector_no_targets::p1::internal-false
+
+  taxonomy:
+    action: Payload selector is a group whose members are not in targets.all
+    action_detail: "test::payload"
+
+  payload:
+    legacy:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: payload_selector_no_targets
+        event_category:
+          value: auth

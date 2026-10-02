@@ -2,7 +2,6 @@
 
 **Open standard for describing tracking plans.** Schema-first analytics event specifications.
 
-[![npm version](https://img.shields.io/npm/v/opentp.svg)](https://www.npmjs.com/package/opentp)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/opentrackplan/opentp-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/opentrackplan/opentp-cli/actions/workflows/ci.yml)
 
@@ -42,6 +41,8 @@ event:
 
 ## Installation
 
+The `opentp` CLI is distributed only as standalone binaries for macOS (arm64 and x64), Linux (x64) and Windows (x64). They do not need Node.js.
+
 **macOS / Linux:**
 ```bash
 curl -fsSL https://opentp.dev/install | bash
@@ -52,14 +53,38 @@ curl -fsSL https://opentp.dev/install | bash
 irm opentp.dev/install.ps1 | iex
 ```
 
-**npm:**
+The installers download the latest [GitHub release](https://github.com/opentrackplan/opentp-cli/releases) into `~/.opentp/bin` and verify it against the `SHA256SUMS` file of the same release (releases up to 0.7.4 have none and install with a warning). To pin a version, set `OPENTP_VERSION` on the shell that runs the script (not on `curl`):
+
 ```bash
-npm install -g opentp
+curl -fsSL https://opentp.dev/install | OPENTP_VERSION=0.7.4 bash
 ```
 
-**npx (no install):**
+```powershell
+$env:OPENTP_VERSION = "0.7.4"; irm opentp.dev/install.ps1 | iex
+```
+
+**Manual download:** every [GitHub release](https://github.com/opentrackplan/opentp-cli/releases) has four binaries, `opentp-mac` (macOS arm64), `opentp-mac-intel` (macOS x64), `opentp-linux` (Linux x64) and `opentp.exe` (Windows x64), and a `SHA256SUMS` file. Download the binary for your platform and `SHA256SUMS`, verify the binary, and put it on your `PATH` as `opentp`:
+
 ```bash
-npx opentp validate
+curl -fsSL -O https://github.com/opentrackplan/opentp-cli/releases/latest/download/opentp-linux \
+  -O https://github.com/opentrackplan/opentp-cli/releases/latest/download/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS   # macOS: shasum -a 256 --check --ignore-missing SHA256SUMS
+chmod +x opentp-linux
+mv opentp-linux ~/.local/bin/opentp             # any directory on your PATH
+```
+
+On Windows, compare `(Get-FileHash .\opentp.exe -Algorithm SHA256).Hash` with the `opentp.exe` line of `SHA256SUMS`.
+
+> **The npm package `opentp` is obsolete.** The CLI is not published to npm. The old npm package (last version 0.5.0, spec `2025-06`) cannot read `2026-01` plans; if you installed it, remove it with `npm uninstall -g opentp`.
+
+**From source (development):** needs Node.js `^20.19.0 || >=22.12.0`.
+
+```bash
+git clone https://github.com/opentrackplan/opentp-cli.git
+cd opentp-cli
+npm ci
+npm run build
+node dist/index.cjs --version
 ```
 
 ## Quick Start
@@ -161,6 +186,8 @@ opentp validate
 # ✓ All events are valid count=42
 ```
 
+Validation fails closed (exit code `1`): event or dictionary files that cannot be loaded (YAML syntax errors with line and column, a missing `event` or `event.taxonomy`), keys that cannot be generated, checks that throw, and problems in `opentp.yaml` itself (invalid templates, unknown keygen pipelines or transform steps, unknown dictionaries or target ids) are all reported as errors. `opentp generate` refuses to export a plan that cannot be loaded completely. See [docs/validate.md](docs/validate.md).
+
 ## CLI Commands
 
 | Command | Description                                         |
@@ -175,11 +202,22 @@ opentp validate
 ### Options
 
 ```bash
-opentp validate --root ./my-project     # Custom project root
-opentp validate --verbose               # Verbose output
-opentp validate --external-rules ./rules    # Custom validation checks
-opentp validate --external-transforms ./transforms  # Custom transforms
+opentp validate --root ./my-project     # Custom project root (-r; default: $OPENTP_ROOT or cwd)
+opentp validate --verbose               # Debug logs on stderr (-v)
+opentp validate --json > report.json    # Machine-readable result; stdout holds only the JSON
+opentp validate --external-rules ./rules    # Custom validation checks (repeatable)
+opentp validate --external-transforms ./transforms  # Custom keygen transforms (repeatable)
+opentp generate json -o events.json     # Write to a file (relative to --root) instead of stdout
+opentp generate json | jq '.events | length'   # stdout is complete and parseable
 ```
+
+Logs go to stderr; stdout carries only the report, the `--json` document or the generator output. Arguments are strict: an unknown command or option (`opentp valdiate`), an option the command does not accept, or an unexpected argument exits with code `2`. Run `opentp --help` for every option.
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Success |
+| `1` | Validation errors, a plan that cannot be loaded completely, or a failed generator |
+| `2` | Usage or configuration error: unknown command or option, invalid `OPENTP_LOG_LEVEL`, missing plugin directory, unknown generator, `opentp.yaml` missing or invalid |
 
 ## Key Concepts
 
@@ -295,6 +333,10 @@ module.exports = {
 opentp validate --external-rules ./my-rules
 ```
 
+A rule that throws does not abort validation: the field gets the error `check <name> failed: <message>`.
+
+Plugin directories (`--external-rules`, `--external-transforms`, `--external-generators`) are resolved against the current directory. Each `<dir>/<name>/index.js` is loaded as an ES module (`export default { ... }`) or a CommonJS module (`module.exports = { ... }`), depending on the nearest `package.json`.
+
 ### Custom Transforms
 
 ```javascript
@@ -308,6 +350,8 @@ module.exports = {
 ```bash
 opentp validate --external-transforms ./my-transforms
 ```
+
+An unknown or malformed step in a keygen pipeline is a configuration error reported against `opentp.yaml`, so pass `--external-transforms` to `fix` and `generate` as well when the pipelines use custom steps.
 
 ## Project Structure
 
@@ -343,14 +387,28 @@ Available schemas:
 
 ## Enterprise Installation
 
-For internal/private repositories:
+To install from an internal mirror of the release assets, set `OPENTP_DOWNLOAD_BASE` to the mirror's `.../releases/download` URL. Set it on `bash` (the shell that runs the installer), not on `curl`:
 
 ```bash
-OPENTP_DOWNLOAD_BASE="https://github.mycompany.com/org/opentrackplan/opentp-cli/releases/download" \
-  curl -fsSL https://opentp.dev/install | bash
+curl -fsSL https://opentp.dev/install | \
+  OPENTP_DOWNLOAD_BASE="https://github.mycompany.com/<org>/opentp-cli/releases/download" bash
 ```
 
-The `OPENTP_DOWNLOAD_BASE` value is not persisted (set it again when needed).
+```powershell
+$env:OPENTP_DOWNLOAD_BASE = "https://github.mycompany.com/<org>/opentp-cli/releases/download"
+irm opentp.dev/install.ps1 | iex
+```
+
+How the download URL is built:
+
+| | URL |
+|---|---|
+| Pinned (`OPENTP_VERSION=0.7.4`) | `$OPENTP_DOWNLOAD_BASE/v0.7.4/<asset>` |
+| Latest (default) | The tag is read once from the redirect of `$OPENTP_DOWNLOAD_BASE` without the trailing `/download`, then `/latest/download/<asset>`; the binary and `SHA256SUMS` are then downloaded as for that pinned version |
+
+Assets are `opentp-mac`, `opentp-mac-intel`, `opentp-linux`, `opentp.exe` and `SHA256SUMS`. "Latest" works only for a base that ends with `/releases/download` and redirects `latest/download/<asset>` to `<tag>/<asset>` (GitHub and GitHub Enterprise); for any other mirror layout, set `OPENTP_VERSION` as well. Releases up to 0.7.4 have no `SHA256SUMS` and are installed with a warning; for any later release a missing `SHA256SUMS`, a missing entry or a checksum mismatch aborts the install, so mirror `SHA256SUMS` together with the binaries.
+
+These variables are not persisted (set them again when needed).
 
 ## Roadmap
 

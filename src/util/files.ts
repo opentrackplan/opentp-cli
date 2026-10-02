@@ -61,6 +61,34 @@ export function loadYaml<T>(filePath: string): T {
 }
 
 /**
+ * Returns true when a parsed YAML value is a mapping (a plain object, not an array or null)
+ */
+export function isYamlMapping(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Formats an error thrown while reading or parsing a YAML file as a one-line message.
+ * YAML syntax errors become "Invalid YAML at line L, column C: <reason>" (the code frame that the
+ * yaml package appends to its messages is dropped).
+ */
+export function formatLoadError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const firstLine = raw.split("\n")[0].trim();
+
+  const linePos = (error as { linePos?: Array<{ line: number; col: number }> } | null)?.linePos;
+  if (error instanceof Error && error.name === "YAMLParseError") {
+    const reason = firstLine.replace(/ at line \d+, column \d+:?$/, "");
+    const start = Array.isArray(linePos) ? linePos[0] : undefined;
+    return start
+      ? `Invalid YAML at line ${start.line}, column ${start.col}: ${reason}`
+      : `Invalid YAML: ${reason}`;
+  }
+
+  return firstLine;
+}
+
+/**
  * Saves data to a YAML file
  */
 export function saveYaml(filePath: string, data: unknown): void {

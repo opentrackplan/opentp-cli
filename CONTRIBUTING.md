@@ -16,7 +16,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
    - Clear description of the problem
    - Steps to reproduce
    - Expected vs actual behavior
-   - Your environment (OS, Node.js version)
+   - Your environment (OS, `opentp --version`, and how you installed it: installer, GitHub Release binary or from source)
 
 ### Suggesting Features
 
@@ -31,14 +31,15 @@ By participating in this project, you agree to maintain a respectful and inclusi
 3. Make your changes
 4. Run tests: `npm test`
 5. Run linter: `npm run lint`
-6. Commit with a clear message
-7. Push and create a Pull Request
+6. Run the type-checks: `npm run typecheck`
+7. Commit with a clear message
+8. Push and create a Pull Request
 
 ## Development Setup
 
 ### Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js `^20.19.0 || >=22.12.0` (the `engines` range; CI tests Node 20 and 22). Node 18 is end-of-life and the dev tooling (vite 7 / vitest 4) does not run on it. `engines` describes only this development toolchain: users install the standalone binaries, which do not need Node.js.
 - npm
 
 ### Getting Started
@@ -48,8 +49,8 @@ By participating in this project, you agree to maintain a respectful and inclusi
 git clone https://github.com/opentrackplan/opentp-cli.git
 cd opentp-cli
 
-# Install dependencies
-npm install
+# Install dependencies (exactly as locked, like CI)
+npm ci
 
 # Run tests
 npm test
@@ -59,6 +60,9 @@ npm run build
 
 # Run linter
 npm run lint
+
+# Type-check src/ (tsconfig.json) and src/ + *.spec.ts (tsconfig.test.json)
+npm run typecheck
 ```
 
 ### Project Structure
@@ -125,6 +129,34 @@ npm run format
 2. Create `index.ts` with `GeneratorDefinition`
 3. Create `generator.spec.ts` with tests
 4. Register in `src/generators/index.ts`
+
+### Continuous Integration
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`, on Node 20 and 22:
+
+1. `npm ci`
+2. `npm run lint`
+3. `npx tsc --noEmit -p .` and `npx tsc --noEmit -p tsconfig.test.json`
+4. `npm test`
+5. `npm run build`
+6. Smoke tests with the built CLI: `tests/data/coverage-valid` must pass with `count=4`, `tests/data/coverage-invalid` must fail, and the `simple` and `full` examples of [opentp-spec](https://github.com/opentrackplan/opentp-spec), checked out at the tag that equals `specVersion` in `package.json`, must pass.
+
+## Releasing (maintainers)
+
+1. Bump the version: `npm version X.Y.Z --no-git-tag-version` (updates `package.json` and `package-lock.json`). While the version is `0.x`, a release with breaking changes bumps the minor version.
+2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and start a new empty `## [Unreleased]` section above it. The release notes start with that section (without it the workflow warns and uses only GitHub's generated notes).
+3. Commit, tag `vX.Y.Z` and push the commit and the tag.
+4. `.github/workflows/release.yml` then:
+   - fails unless the tag equals `v` + the `package.json` version (and `package-lock.json` agrees);
+   - runs the full CI workflow as its `verify` job;
+   - builds the four binaries (`opentp-linux`, `opentp.exe`, `opentp-mac`, `opentp-mac-intel`) and runs each one on its own platform (version, the two fixtures, an unknown command, an external rule, `generate json`) before uploading it;
+   - generates `SHA256SUMS` and publishes a GitHub Release with all five files and the changelog section. A tag with a pre-release suffix (`v1.0.0-rc.1`) becomes a GitHub pre-release, which the installers do not treat as latest.
+
+The installers download the latest GitHub Release by default, so they need no change for a release. Never move or re-push a published tag: if a release is broken, release a new patch version.
+
+### Distribution: binaries only
+
+The CLI is distributed only as the release binaries (GitHub Releases and the install scripts). It is not published to npm, now or later: `package.json` is `"private": true`, and the old npm package `opentp` (0.5.0) is obsolete. Do not add an npm publish step, `npm install -g` / `npx` instructions or npm badges. npm remains a development tool only (`npm ci`, `npm test`, `npm run build`, `package-lock.json`). Moving the whole toolchain (tests, build, compile) to Bun is a possible future direction, not a decision.
 
 ## Commit Messages
 

@@ -1,0 +1,9 @@
+opentp: 2026-01
+
+# Broken YAML (a nested mapping in a compact mapping): the file cannot be loaded and must fail
+# the run with a file-scoped error that has a line and column.
+event:
+  key: auth::yaml_syntax_error::p1::internal-false
+  taxonomy:
+    action: Event file with a YAML syntax error
+    action_detail: test: yaml

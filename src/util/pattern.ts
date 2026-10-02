@@ -59,6 +59,53 @@ export function parsePattern(pattern: string): PatternPart[] {
   return parts;
 }
 
+/** Placeholder names become named regex groups, so they must be valid JS identifiers */
+const PLACEHOLDER_NAME = /^[\p{ID_Start}$_][\p{ID_Continue}$‌‍]*$/u;
+
+/**
+ * Lists the problems that make a matching template unusable: the path template
+ * (`spec.paths.events.template`) or a composite taxonomy template. Returns an empty array when the
+ * template is valid.
+ *
+ * Problems: not a string, syntax errors (unclosed or empty placeholder), transforms (not allowed in
+ * matching templates), placeholder names that are not identifiers, and duplicate placeholders.
+ */
+export function getMatchTemplateProblems(template: unknown): string[] {
+  if (typeof template !== "string" || template.length === 0) {
+    return ["Template must be a non-empty string"];
+  }
+
+  let parts: PatternPart[];
+  try {
+    parts = parsePattern(template);
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    if (part.type !== "variable") continue;
+
+    if (part.transforms && part.transforms.length > 0) {
+      problems.push(
+        `Transforms are not allowed in this template: '{${part.value} | ${part.transforms.join(" | ")}}'`,
+      );
+    }
+
+    if (!PLACEHOLDER_NAME.test(part.value)) {
+      problems.push(
+        `Invalid placeholder '{${part.value}}': names must start with a letter, '_' or '$' and contain only letters, digits, '_' or '$'`,
+      );
+    } else if (seen.has(part.value)) {
+      problems.push(`Duplicate placeholder '{${part.value}}'`);
+    }
+    seen.add(part.value);
+  }
+
+  return problems;
+}
+
 /**
  * Converts pattern to regex for variable extraction
  * '{application}/{category}/{name}.yaml' -> regex with named groups

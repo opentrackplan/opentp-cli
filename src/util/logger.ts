@@ -1,9 +1,12 @@
 /**
  * Simple CLI logger
  * Using custom implementation instead of pino for better bundling compatibility
+ *
+ * Every level is written to stderr, so that stdout carries only command output (the `--json`
+ * document, the human validation report, generator output).
  */
 
-type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
 const levels: Record<LogLevel, number> = {
   trace: 10,
@@ -14,7 +17,25 @@ const levels: Record<LogLevel, number> = {
   fatal: 60,
 };
 
-let currentLevel: LogLevel = (process.env.OPENTP_LOG_LEVEL as LogLevel) || "info";
+/** Valid values of OPENTP_LOG_LEVEL, from most to least verbose */
+export const LOG_LEVELS = Object.keys(levels) as LogLevel[];
+
+export function isLogLevel(value: unknown): value is LogLevel {
+  return typeof value === "string" && Object.hasOwn(levels, value);
+}
+
+/**
+ * Returns the OPENTP_LOG_LEVEL problem, or null when the variable is unset, empty or valid.
+ * An invalid value is ignored by the logger (it keeps "info"); the CLI reports it as a usage error.
+ */
+export function getLogLevelEnvProblem(env: NodeJS.ProcessEnv = process.env): string | null {
+  const value = env.OPENTP_LOG_LEVEL;
+  if (value === undefined || value === "" || isLogLevel(value)) return null;
+  return `Invalid OPENTP_LOG_LEVEL '${value}'. Expected one of: ${LOG_LEVELS.join(", ")}`;
+}
+
+const envLevel = process.env.OPENTP_LOG_LEVEL;
+let currentLevel: LogLevel = isLogLevel(envLevel) ? envLevel : "info";
 
 function shouldLog(level: LogLevel): boolean {
   return levels[level] >= levels[currentLevel];
@@ -61,15 +82,8 @@ function formatMessage(level: LogLevel, obj: unknown, msg?: string): string {
 function log(level: LogLevel, obj: unknown, msg?: string): void {
   if (!shouldLog(level)) return;
 
-  const output = formatMessage(level, obj, msg);
-
-  if (level === "error" || level === "fatal") {
-    console.error(output);
-  } else if (level === "warn") {
-    console.warn(output);
-  } else {
-    console.log(output);
-  }
+  // All levels go to stderr; stdout is reserved for command output
+  console.error(formatMessage(level, obj, msg));
 }
 
 export const logger = {

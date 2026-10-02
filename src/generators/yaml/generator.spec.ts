@@ -49,8 +49,8 @@ describe("yaml generator", () => {
     expect(yamlGenerator.name).toBe("yaml");
   });
 
-  it("should generate valid YAML to stdout", () => {
-    const result = yamlGenerator.generate(mockContext);
+  it("should generate valid YAML to stdout", async () => {
+    const result = await yamlGenerator.generate(mockContext);
     expect(result.stdout).toBeDefined();
     expect(result.files).toBeUndefined();
 
@@ -61,8 +61,8 @@ describe("yaml generator", () => {
     expect(result.stdout).toContain("example: enterprise");
   });
 
-  it("should output to file when --output is specified", () => {
-    const result = yamlGenerator.generate({
+  it("should output to file when --output is specified", async () => {
+    const result = await yamlGenerator.generate({
       ...mockContext,
       options: { output: "./output/events.yaml" },
     });
@@ -73,8 +73,8 @@ describe("yaml generator", () => {
     expect(result.files![0].content).toContain("opentp: 2026-01");
   });
 
-  it("should include dictionaries", () => {
-    const result = yamlGenerator.generate(mockContext);
+  it("should include dictionaries", async () => {
+    const result = await yamlGenerator.generate(mockContext);
     expect(result.stdout).toContain("dictionaries:");
     expect(result.stdout).toContain("actions:");
     expect(result.stdout).toContain("- click");

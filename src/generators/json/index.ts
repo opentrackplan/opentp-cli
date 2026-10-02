@@ -35,7 +35,8 @@ export const jsonGenerator: GeneratorDefinition = {
   generate(context: GeneratorContext): GeneratorResult {
     const data = buildExportData(context);
     const pretty = context.options.pretty !== false;
-    const content = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+    // Newline-terminated, so that stdout and an --output file get the same bytes
+    const content = `${pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data)}\n`;
 
     if (context.options.output) {
       return {

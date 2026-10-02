@@ -1,0 +1,21 @@
+opentp: 2026-01
+
+# "ticket" uses the external check "throwing-check" (external-rules/throwing-check), which throws.
+# fixtures.spec.ts loads it; the CLI needs --external-rules "$PWD/tests/data/coverage-invalid/external-rules"
+# (without it the error is "Unknown check: throwing-check").
+event:
+  key: auth::check_throws::p1::internal-false
+
+  taxonomy:
+    action: A custom check throws instead of returning a result
+    action_detail: "test::checks"
+    ticket: "TICKET-1"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: check_throws
+      event_category:
+        value: auth

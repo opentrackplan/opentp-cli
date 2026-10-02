@@ -185,6 +185,10 @@ Load with CLI:
 opentp validate --external-rules ./my-rules
 ```
 
+The directory is resolved against the current directory (a directory that does not exist is a usage error, exit code `2`). Each `<dir>/<name>/index.js` is loaded as an ES module (`export default { ... }`) or a CommonJS module (`module.exports = { ... }`), depending on the nearest `package.json` (`"type": "module"` or not). A check that is not loaded is reported as `Unknown check: <name>`.
+
+A check should return `{ valid: false, error }` for invalid values rather than throw. If a check throws (or its promise rejects, or it returns something other than a result object), validation does not stop: the field gets the error `check <name> failed: <message>` and the run exits with code `1`.
+
 ### Rule Context
 
 Custom checks receive a context object:

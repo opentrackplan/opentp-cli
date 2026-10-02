@@ -5,9 +5,19 @@ import {
   validateFieldExclusivity,
   validateWithRules,
 } from "../rules";
-import type { Field, OpenTPConfig, ResolvedEvent, TaxonomyField, ValidationError } from "../types";
-import { parsePattern, patternToRegex } from "../util";
+import type {
+  Field,
+  OpenTPConfig,
+  PiiReservedFieldConfig,
+  ResolvedEvent,
+  TaxonomyField,
+  ValidationError,
+} from "../types";
+import { getMatchTemplateProblems, isYamlMapping, patternToRegex } from "../util";
+import { type ConfigIssue, validateConfig } from "./config";
+import type { DictionaryIssue } from "./dict";
 import { getDictValues } from "./dict";
+import type { EventLoadIssue } from "./event";
 import { mergeSchemaMaps, resolveEventPayload, UNVERSIONED_VERSION_KEY } from "./payload";
 
 function buildIgnoreSet(ignoreChecks: Array<{ path: string }>): Set<string> {
@@ -44,7 +54,48 @@ function normalizeEventKey(value: unknown): string | null {
 }
 
 /**
- * Validates all events and returns list of errors
+ * Converts opentp.yaml configuration issues into validation errors with event "opentp.yaml"
+ */
+export function configIssuesToErrors(issues: ConfigIssue[]): ValidationError[] {
+  return issues.map((issue) => ({
+    event: "opentp.yaml",
+    path: issue.path,
+    message: issue.message,
+    severity: "error" as const,
+  }));
+}
+
+/**
+ * Converts dictionary and event-file load issues into validation errors, so that files that could
+ * not be loaded fail the run. Dictionary issues are labelled "dictionaries/<file>", event issues
+ * use the path relative to the events root (or "opentp.yaml").
+ */
+export function loadIssuesToErrors(
+  dictionaryIssues: DictionaryIssue[],
+  eventIssues: EventLoadIssue[],
+): ValidationError[] {
+  return [
+    ...dictionaryIssues.map((issue) => ({
+      event: `dictionaries/${issue.file}`,
+      path: issue.path,
+      message: issue.message,
+      severity: "error" as const,
+    })),
+    ...eventIssues.map((issue) => ({
+      event: issue.file,
+      path: issue.path,
+      message: issue.message,
+      severity: "error" as const,
+    })),
+  ];
+}
+
+/**
+ * Validates all events and returns list of errors.
+ *
+ * Also reports configuration problems once, with event "opentp.yaml": validateConfig issues, and
+ * taxonomy or fragment `dict` references to dictionaries that were not loaded.
+ *
  * @param events - Resolved events to validate
  * @param config - OpenTP configuration
  * @param dictionaries - Loaded dictionaries
@@ -68,6 +119,10 @@ export async function validateEvents(
   }
 
   const errors: ValidationError[] = [];
+
+  // Config-level problems, reported once
+  errors.push(...configIssuesToErrors(validateConfig(config)));
+  errors.push(...validateTaxonomyDictionaries(config, dictionaries));
 
   // 0. Unique event keys across the tracking plan
   const seenKeys = new Map<string, string>();
@@ -140,6 +195,44 @@ export async function validateEvents(
 }
 
 /**
+ * Reports taxonomy and fragment `dict` references to unknown dictionaries once, against
+ * opentp.yaml (taxonomy definitions live only there). Per-event taxonomy checks skip unknown
+ * dictionaries.
+ */
+function validateTaxonomyDictionaries(
+  config: OpenTPConfig,
+  dictionaries: Map<string, (string | number | boolean)[]>,
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const taxonomy: unknown = config.spec.events.taxonomy;
+  if (!isYamlMapping(taxonomy)) return errors;
+
+  const check = (field: unknown, fieldPath: string): void => {
+    if (!isYamlMapping(field) || field.dict === undefined) return;
+    if (typeof field.dict !== "string" || getDictValues(field.dict, dictionaries) === null) {
+      errors.push({
+        event: "opentp.yaml",
+        path: `${fieldPath}.dict`,
+        message: `Unknown dictionary '${String(field.dict)}'`,
+        severity: "error",
+      });
+    }
+  };
+
+  for (const [fieldName, field] of Object.entries(taxonomy)) {
+    const fieldPath = `spec.events.taxonomy.${fieldName}`;
+    check(field, fieldPath);
+    if (isYamlMapping(field) && isYamlMapping(field.fragments)) {
+      for (const [fragName, fragment] of Object.entries(field.fragments)) {
+        check(fragment, `${fieldPath}.fragments.${fragName}`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Validates a single event
  */
 export async function validateEvent(
@@ -202,36 +295,31 @@ export async function validateEvent(
       }
 
       if (typeof constraints?.pattern === "string") {
-        try {
-          const re = new RegExp(constraints.pattern, "u");
-          if (!re.test(key)) {
-            errors.push({
-              event: event.relativePath,
-              path: "event.key",
-              message: `Key does not match pattern ${JSON.stringify(constraints.pattern)}`,
-              severity: "error",
-            });
-          }
-        } catch (e) {
+        const re = compileRegex(constraints.pattern);
+        // An invalid regex is reported once against opentp.yaml (validateConfig)
+        if (re && !re.test(key)) {
           errors.push({
-            event: "opentp.yaml",
-            path: "spec.events.key.pattern",
-            message: `Invalid regex in spec.events.key.pattern: ${String(e)}`,
+            event: event.relativePath,
+            path: "event.key",
+            message: `Key does not match pattern ${JSON.stringify(constraints.pattern)}`,
             severity: "error",
           });
         }
       }
 
-      // Optional tooling-defined keygen: enforce generated key equality when configured
+      // Optional tooling-defined keygen: enforce generated key equality when configured.
+      // Without an expected key and without a per-event reason, keygen itself is misconfigured,
+      // which validateConfig reports once against opentp.yaml.
       if (config.spec.events["x-opentp"]?.keygen) {
         if (typeof event.expectedKey !== "string") {
-          errors.push({
-            event: event.relativePath,
-            path: "event.key",
-            message:
-              "spec.events.x-opentp.keygen is configured but the expected key could not be generated",
-            severity: "error",
-          });
+          if (event.keygenError) {
+            errors.push({
+              event: event.relativePath,
+              path: "event.key",
+              message: `Cannot generate the expected key: ${event.keygenError}`,
+              severity: "error",
+            });
+          }
         } else if (key !== event.expectedKey) {
           errors.push({
             event: event.relativePath,
@@ -354,24 +442,13 @@ async function validateTaxonomy(
       });
     }
     if (typeof fieldConfig.pattern === "string") {
-      try {
-        const re = new RegExp(fieldConfig.pattern, "u");
-        if (!re.test(value)) {
-          errors.push({
-            event: event.relativePath,
-            path: checkPath,
-            message: `Value does not match pattern ${JSON.stringify(fieldConfig.pattern)}`,
-            severity: "error",
-          });
-        }
-      } catch (e) {
-        const taxonomyKey = checkPath.startsWith("taxonomy.")
-          ? checkPath.slice("taxonomy.".length)
-          : checkPath;
+      const re = compileRegex(fieldConfig.pattern);
+      // An invalid regex is reported once against opentp.yaml (validateConfig)
+      if (re && !re.test(value)) {
         errors.push({
-          event: "opentp.yaml",
-          path: `spec.events.taxonomy.${taxonomyKey}.pattern`,
-          message: `Invalid regex in taxonomy field pattern: ${String(e)}`,
+          event: event.relativePath,
+          path: checkPath,
+          message: `Value does not match pattern ${JSON.stringify(fieldConfig.pattern)}`,
           severity: "error",
         });
       }
@@ -435,6 +512,8 @@ async function validateTaxonomy(
   for (const [fieldName, fieldConfig] of Object.entries(taxonomyConfig)) {
     const checkPath = `taxonomy.${fieldName}`;
     if (ignore.has(checkPath)) continue;
+    // Invalid definitions are reported once against opentp.yaml (validateConfig)
+    if (!isYamlMapping(fieldConfig)) continue;
 
     const value = event.taxonomy[fieldName];
 
@@ -475,7 +554,8 @@ async function validateTaxonomy(
       });
     }
 
-    // Dict check (reference to dictionary file)
+    // Dict check (reference to dictionary file). An unknown dictionary is reported once against
+    // opentp.yaml (validateTaxonomyDictionaries).
     if (fieldConfig.dict) {
       const allowedValues = getDictValues(fieldConfig.dict, dictionaries);
       if (allowedValues && !allowedValues.includes(typedValue)) {
@@ -517,21 +597,14 @@ async function validateTaxonomy(
       }
     }
 
-    // Composite fragments check (template + fragments)
-    if (fieldConfig.template && fieldConfig.fragments && typeof typedValue === "string") {
-      const parts = parsePattern(fieldConfig.template);
-      for (const part of parts) {
-        if (part.type === "variable" && part.transforms && part.transforms.length > 0) {
-          errors.push({
-            event: "opentp.yaml",
-            path: `spec.events.taxonomy.${fieldName}.template`,
-            message: "Transforms are not allowed in taxonomy composite templates",
-            severity: "error",
-          });
-          break;
-        }
-      }
-
+    // Composite fragments check (template + fragments). An unusable template or fragments
+    // definition is reported once against opentp.yaml (validateConfig).
+    if (
+      fieldConfig.template &&
+      isYamlMapping(fieldConfig.fragments) &&
+      getMatchTemplateProblems(fieldConfig.template).length === 0 &&
+      typeof typedValue === "string"
+    ) {
       const re = patternToRegex(fieldConfig.template);
       const match = typedValue.match(re);
       if (!match?.groups) {
@@ -547,6 +620,7 @@ async function validateTaxonomy(
       for (const [fragName, fragConfig] of Object.entries(fieldConfig.fragments)) {
         const fragCheckPath = `taxonomy.${fragName}`;
         if (ignore.has(fragCheckPath)) continue;
+        if (!isYamlMapping(fragConfig)) continue;
 
         const rawFrag = match.groups[fragName];
 
@@ -586,6 +660,7 @@ async function validateTaxonomy(
           });
         }
 
+        // Unknown dictionaries are reported once against opentp.yaml
         if (fragConfig.dict) {
           const allowedValues = getDictValues(fragConfig.dict, dictionaries);
           if (allowedValues && !allowedValues.includes(typedFragValue)) {
@@ -1043,7 +1118,7 @@ async function validatePayload(
 
     async function validateReservedString(
       value: unknown,
-      configField: NonNullable<typeof piiConfig.kind>,
+      configField: PiiReservedFieldConfig,
       valuePath: string,
       name: string,
     ): Promise<void> {
@@ -1429,6 +1504,14 @@ async function validatePayload(
   return errors;
 }
 
+function compileRegex(pattern: string): RegExp | null {
+  try {
+    return new RegExp(pattern, "u");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Groups errors by event for pretty output
  */
@@ -1455,7 +1538,9 @@ export function formatErrors(errors: ValidationError[]): string {
     lines.push(`\n[${event}]`);
     for (const error of eventErrors) {
       const prefix = error.severity === "error" ? "✗" : "⚠";
-      lines.push(`  ${prefix} ${error.path}: ${error.message}`);
+      // File-level problems (e.g. YAML syntax errors) have an empty path
+      const location = error.path ? `${error.path}: ` : "";
+      lines.push(`  ${prefix} ${location}${error.message}`);
     }
   }
 

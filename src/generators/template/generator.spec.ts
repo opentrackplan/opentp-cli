@@ -75,11 +75,11 @@ describe("template generator", () => {
     ).toThrow("Template file not found");
   });
 
-  it("should render simple variable interpolation", () => {
+  it("should render simple variable interpolation", async () => {
     const templatePath = path.join(tempDir, "template.txt");
     fs.writeFileSync(templatePath, "Title: {{info.title}}");
 
-    const result = templateGenerator.generate({
+    const result = await templateGenerator.generate({
       ...mockContext,
       options: { file: templatePath },
     });
@@ -87,11 +87,11 @@ describe("template generator", () => {
     expect(result.stdout).toBe("Title: Test App");
   });
 
-  it("should render {{#each}} loops", () => {
+  it("should render {{#each}} loops", async () => {
     const templatePath = path.join(tempDir, "template.txt");
     fs.writeFileSync(templatePath, "{{#each events}}{{key}}\n{{/each}}");
 
-    const result = templateGenerator.generate({
+    const result = await templateGenerator.generate({
       ...mockContext,
       options: { file: templatePath },
     });
@@ -100,14 +100,14 @@ describe("template generator", () => {
     expect(result.stdout).toContain("app::logout");
   });
 
-  it("should render {{#if}} conditionals", () => {
+  it("should render {{#if}} conditionals", async () => {
     const templatePath = path.join(tempDir, "template.txt");
     fs.writeFileSync(
       templatePath,
       "{{#each events}}{{key}}{{#if lifecycle}} ({{lifecycle.status}}){{/if}}\n{{/each}}",
     );
 
-    const result = templateGenerator.generate({
+    const result = await templateGenerator.generate({
       ...mockContext,
       options: { file: templatePath },
     });
@@ -117,11 +117,11 @@ describe("template generator", () => {
     expect(result.stdout).not.toContain("app::logout (");
   });
 
-  it("should render @index in loops", () => {
+  it("should render @index in loops", async () => {
     const templatePath = path.join(tempDir, "template.txt");
     fs.writeFileSync(templatePath, "{{#each events}}{{@index}}: {{key}}\n{{/each}}");
 
-    const result = templateGenerator.generate({
+    const result = await templateGenerator.generate({
       ...mockContext,
       options: { file: templatePath },
     });
@@ -130,12 +130,12 @@ describe("template generator", () => {
     expect(result.stdout).toContain("1: app::logout");
   });
 
-  it("should output to file when --output is specified", () => {
+  it("should output to file when --output is specified", async () => {
     const templatePath = path.join(tempDir, "template.txt");
     const outputPath = path.join(tempDir, "output.txt");
     fs.writeFileSync(templatePath, "Events: {{events.length}}");
 
-    const result = templateGenerator.generate({
+    const result = await templateGenerator.generate({
       ...mockContext,
       options: { file: templatePath, output: outputPath },
     });
@@ -145,7 +145,7 @@ describe("template generator", () => {
     expect(result.files![0].path).toBe(outputPath);
   });
 
-  it("should render markdown template", () => {
+  it("should render markdown template", async () => {
     const templatePath = path.join(tempDir, "events.md");
     fs.writeFileSync(
       templatePath,
@@ -162,7 +162,7 @@ describe("template generator", () => {
 `,
     );
 
-    const result = templateGenerator.generate({
+    const result = await templateGenerator.generate({
       ...mockContext,
       options: { file: templatePath },
     });

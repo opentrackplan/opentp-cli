@@ -1,6 +1,7 @@
 {
   "name": "opentp",
-  "version": "0.7.4",
+  "version": "0.8.0",
+  "private": true,
   "specVersion": "2026-01",
   "description": "OpenTrackPlan CLI - validate and generate analytics tracking plans",
   "type": "module",
@@ -41,7 +42,7 @@
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
     "format": "biome format --write src/",
-    "prepublishOnly": "npm run build && npm run test",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.test.json",
     "compile:mac": "npx bun build src/cli.ts --compile --target=bun-darwin-arm64 --outfile releases/opentp-mac",
     "compile:mac-intel": "npx bun build src/cli.ts --compile --target=bun-darwin-x64 --outfile releases/opentp-mac-intel",
     "compile:linux": "npx bun build src/cli.ts --compile --target=bun-linux-x64 --outfile releases/opentp-linux",
@@ -50,7 +51,7 @@
     "release": "npm run compile"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",

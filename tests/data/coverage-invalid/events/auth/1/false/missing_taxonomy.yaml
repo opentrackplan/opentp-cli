@@ -1,0 +1,15 @@
+opentp: 2026-01
+
+# event.taxonomy is required (even when every taxonomy field comes from the path). The file cannot
+# be loaded.
+event:
+  key: auth::missing_taxonomy::p1::internal-false
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: missing_taxonomy
+      event_category:
+        value: auth

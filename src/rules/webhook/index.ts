@@ -62,23 +62,23 @@ async function fetchWithRetry(
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      const response = await fetch(url, {
+      return await fetch(url, {
         ...options,
         signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
-      return response;
     } catch (err) {
       lastError = err as Error;
       if (attempt < retries) {
         // Wait before retry (exponential backoff)
         await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt));
       }
+    } finally {
+      // Also on failure: a pending timer would keep the process alive (the CLI sets exitCode and
+      // waits for the event loop to drain instead of calling process.exit)
+      clearTimeout(timeoutId);
     }
   }
 

@@ -1,12 +1,48 @@
 name: Release
 
+# The CLI is distributed only as binaries: this workflow publishes a GitHub Release with the four
+# binaries and SHA256SUMS, which the installers download. Nothing is published to npm.
+
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
+  check-version:
+    name: Check tag matches package.json
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare tag with package.json and package-lock.json
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          lock_version="$(node -p "require('./package-lock.json').version")"
+          if [ "$tag" != "v${pkg_version}" ]; then
+            echo "::error::Tag ${tag} does not match package.json version ${pkg_version} (expected tag v${pkg_version}). Do not move the tag: bump the version and push a new tag."
+            exit 1
+          fi
+          if [ "$lock_version" != "$pkg_version" ]; then
+            echo "::error::package-lock.json version ${lock_version} does not match package.json version ${pkg_version}. Use 'npm version X.Y.Z --no-git-tag-version' to bump both."
+            exit 1
+          fi
+          echo "Releasing ${tag}"
+
+  # The full CI workflow (lint, both type-checks, tests on Node 20/22, build, smoke tests).
+  verify:
+    needs: check-version
+    uses: ./.github/workflows/ci.yml
+
   build:
+    needs: [check-version, verify]
+
     strategy:
       matrix:
         include:
@@ -45,6 +81,61 @@ jobs:
       - name: Build binary
         run: bun build src/cli.ts --compile --target=bun-${{ matrix.target }} --outfile ${{ matrix.artifact }}
 
+      # `verify` tests only the Node bundle. Run every binary on its own runner before it is uploaded, so
+      # a Bun-specific regression (entry guard, exit codes, plugin import(), Windows paths) cannot be
+      # released. Bash on every runner (Git Bash on Windows).
+      - name: Smoke test the binary
+        shell: bash
+        env:
+          BIN: ./${{ matrix.artifact }}
+        run: |
+          set -euo pipefail
+          "$BIN" --version
+
+          # Runs the binary; sets rc and out (stdout + stderr, without carriage returns)
+          run() {
+            rc=0
+            out="$("$BIN" "$@" 2>&1)" || rc=$?
+            out="${out//$'\r'/}"
+          }
+
+          run validate --root tests/data/coverage-valid
+          echo "$out"
+          if [ "$rc" -ne 0 ] || ! grep -Eq 'count=4$' <<<"$out"; then
+            echo "::error::coverage-valid: expected exit code 0 and 'count=4', got exit code ${rc}"
+            exit 1
+          fi
+
+          run validate --root tests/data/coverage-invalid
+          echo "$out" | tail -n 3
+          if [ "$rc" -ne 1 ] || ! grep -q 'Validation failed' <<<"$out"; then
+            echo "::error::coverage-invalid: expected exit code 1 and 'Validation failed', got exit code ${rc}"
+            exit 1
+          fi
+
+          run valdiate --root tests/data/coverage-valid
+          if [ "$rc" -ne 2 ]; then
+            echo "::error::unknown command: expected exit code 2, got ${rc}"
+            exit 1
+          fi
+
+          # External plugins are imported through a file URL (Windows paths)
+          run validate --json --root tests/data/coverage-invalid \
+            --external-rules tests/data/coverage-invalid/external-rules
+          if [ "$rc" -ne 1 ] || ! grep -q 'check throwing-check failed:' <<<"$out" \
+            || grep -q 'Unknown check: throwing-check' <<<"$out"; then
+            echo "::error::--external-rules: the external rule was not loaded (exit code ${rc})"
+            exit 1
+          fi
+
+          # stdout carries the complete generator output: the same bytes as --output (compared with
+          # Node.js, which every runner has, instead of cmp)
+          "$BIN" generate json --root tests/data/coverage-valid > "$RUNNER_TEMP/stdout.json"
+          "$BIN" generate json --root tests/data/coverage-valid -o "$RUNNER_TEMP/output.json"
+          node -e 'const fs = require("node:fs"); const [a, b] = process.argv.slice(1);
+            if (!fs.readFileSync(a).equals(fs.readFileSync(b))) { console.error(`::error::generate json: stdout differs from --output`); process.exit(1); }' \
+            "$RUNNER_TEMP/stdout.json" "$RUNNER_TEMP/output.json"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -58,6 +149,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -67,8 +160,36 @@ jobs:
       - name: List binaries
         run: ls -la binaries/
 
+      # The installers verify downloads against this file. Asset names are fixed (installers and mirrors use them).
+      - name: Generate SHA256SUMS
+        working-directory: binaries
+        run: |
+          set -euo pipefail
+          sha256sum opentp-linux opentp.exe opentp-mac opentp-mac-intel > SHA256SUMS
+          cat SHA256SUMS
+
+      # The "## [X.Y.Z]" section of CHANGELOG.md goes first in the release notes (breaking changes must
+      # be called out); GitHub's generated list of pull requests follows it.
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          awk -v heading="## [${version}]" '
+            /^## / { if (found) exit; if (index($0, heading) == 1) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+            echo "::warning title=No changelog entry::CHANGELOG.md has no '## [${version}]' section, so the release notes list only the generated pull requests."
+          fi
+          cat "$RUNNER_TEMP/release-notes.md"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: binaries/*
+          fail_on_unmatched_files: true
+          body_path: ${{ runner.temp }}/release-notes.md
           generate_release_notes: true
+          # A tag with a pre-release suffix (v1.0.0-rc.1) is a GitHub pre-release: never "latest", so
+          # the installers do not pick it up unless OPENTP_VERSION pins it.
+          prerelease: ${{ contains(github.ref_name, '-') }}

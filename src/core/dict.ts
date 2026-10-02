@@ -1,5 +1,11 @@
 import type { Dict } from "../types";
-import { filterByExtension, loadYaml, scanDirectory } from "../util";
+import {
+  filterByExtension,
+  formatLoadError,
+  isYamlMapping,
+  loadYaml,
+  scanDirectory,
+} from "../util";
 
 export interface DictionaryIssue {
   file: string;
@@ -28,67 +34,81 @@ export function loadDictionaries(
   const yamlFiles = filterByExtension(allFiles, [".yaml", ".yml"]);
 
   for (const [relativePath, absolutePath] of yamlFiles) {
+    let document: unknown;
     try {
-      const dict = loadYaml<Dict>(absolutePath);
-
-      if (typeof dict.opentp !== "string" || dict.opentp.length === 0) {
-        issues.push({
-          file: relativePath,
-          path: "opentp",
-          message: "Missing required field: opentp",
-        });
-      } else if (expectedOpentpVersion && dict.opentp !== expectedOpentpVersion) {
-        issues.push({
-          file: relativePath,
-          path: "opentp",
-          message: `Unsupported OpenTrackPlan schema version '${dict.opentp}'. Expected '${expectedOpentpVersion}'.`,
-        });
-      }
-
-      if (!dict.dict?.values) {
-        issues.push({
-          file: relativePath,
-          path: "dict.values",
-          message: "Missing required field: dict.values",
-        });
-        continue;
-      }
-
-      if (!Array.isArray(dict.dict.values)) {
-        issues.push({
-          file: relativePath,
-          path: "dict.values",
-          message: "dict.values must be an array",
-        });
-        continue;
-      }
-
-      // uniqueItems (schema): report duplicates as errors
-      const seen = new Map<string, number>();
-      const duplicates: Array<string | number | boolean> = [];
-      for (const value of dict.dict.values) {
-        const key = JSON.stringify(value);
-        const count = (seen.get(key) ?? 0) + 1;
-        seen.set(key, count);
-        if (count === 2) {
-          duplicates.push(value);
-        }
-      }
-      if (duplicates.length > 0) {
-        issues.push({
-          file: relativePath,
-          path: "dict.values",
-          message: `Duplicate values are not allowed: ${duplicates.map((v) => JSON.stringify(v)).join(", ")}`,
-        });
-      }
-
-      // Dictionary key is the path without extension
-      // Example: 'Taxonomy/Actions.yaml' -> 'Taxonomy/Actions'
-      const dictKey = relativePath.replace(/\.ya?ml$/i, "");
-      dictionaries.set(dictKey, dict.dict.values);
+      document = loadYaml<unknown>(absolutePath);
     } catch (error) {
-      console.warn(`Failed to load dictionary ${relativePath}:`, error);
+      // Unreadable file or YAML syntax error: the dictionary is not loaded
+      issues.push({ file: relativePath, path: "", message: formatLoadError(error) });
+      continue;
     }
+
+    if (!isYamlMapping(document)) {
+      issues.push({
+        file: relativePath,
+        path: "",
+        message: "Expected a mapping with 'opentp' and 'dict'",
+      });
+      continue;
+    }
+
+    const dict = document as unknown as Dict;
+
+    if (typeof dict.opentp !== "string" || dict.opentp.length === 0) {
+      issues.push({
+        file: relativePath,
+        path: "opentp",
+        message: "Missing required field: opentp",
+      });
+    } else if (expectedOpentpVersion && dict.opentp !== expectedOpentpVersion) {
+      issues.push({
+        file: relativePath,
+        path: "opentp",
+        message: `Unsupported OpenTrackPlan schema version '${dict.opentp}'. Expected '${expectedOpentpVersion}'.`,
+      });
+    }
+
+    if (!dict.dict?.values) {
+      issues.push({
+        file: relativePath,
+        path: "dict.values",
+        message: "Missing required field: dict.values",
+      });
+      continue;
+    }
+
+    if (!Array.isArray(dict.dict.values)) {
+      issues.push({
+        file: relativePath,
+        path: "dict.values",
+        message: "dict.values must be an array",
+      });
+      continue;
+    }
+
+    // uniqueItems (schema): report duplicates as errors
+    const seen = new Map<string, number>();
+    const duplicates: Array<string | number | boolean> = [];
+    for (const value of dict.dict.values) {
+      const key = JSON.stringify(value);
+      const count = (seen.get(key) ?? 0) + 1;
+      seen.set(key, count);
+      if (count === 2) {
+        duplicates.push(value);
+      }
+    }
+    if (duplicates.length > 0) {
+      issues.push({
+        file: relativePath,
+        path: "dict.values",
+        message: `Duplicate values are not allowed: ${duplicates.map((v) => JSON.stringify(v)).join(", ")}`,
+      });
+    }
+
+    // Dictionary key is the path without extension
+    // Example: 'Taxonomy/Actions.yaml' -> 'Taxonomy/Actions'
+    const dictKey = relativePath.replace(/\.ya?ml$/i, "");
+    dictionaries.set(dictKey, dict.dict.values);
   }
 
   return { dictionaries, issues };

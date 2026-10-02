@@ -1,5 +1,5 @@
 // Re-export factory functions
-export { createStepFn, createTransform, createTransforms } from "./factory";
+export { createStepFn, createTransform, createTransforms, getStepProblem } from "./factory";
 
 // Re-export registry functions
 export { getStep, getStepNames, hasStep, loadExternalTransforms, registerStep } from "./registry";

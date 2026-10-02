@@ -3,6 +3,8 @@ import {
   getRule,
   getRuleNames,
   hasRule,
+  type RuleResult,
+  registerRule,
   validateFieldExclusivity,
   validateWithRules,
 } from "./index";
@@ -74,6 +76,41 @@ describe("validateWithRules", () => {
     );
     expect(errors).toHaveLength(1);
     expect(errors[0].code).toBe("UNKNOWN_CHECK");
+  });
+
+  it("turns a throwing or rejecting rule into an error and keeps going", async () => {
+    registerRule({
+      name: "test-throws",
+      validate: () => {
+        throw new Error("boom");
+      },
+    });
+    registerRule({
+      name: "test-rejects",
+      validate: async () => {
+        throw "plain string";
+      },
+    });
+    registerRule({
+      name: "test-no-result",
+      validate: () => undefined as unknown as RuleResult,
+    });
+
+    const errors = await validateWithRules(
+      "hello",
+      { "test-throws": true, "test-rejects": true, "test-no-result": true, "max-length": 1 },
+      ctx,
+    );
+    expect(errors).toEqual([
+      { valid: false, error: "check test-throws failed: boom", code: "CHECK_FAILED" },
+      { valid: false, error: "check test-rejects failed: plain string", code: "CHECK_FAILED" },
+      {
+        valid: false,
+        error: "check test-no-result failed: expected a result object, got undefined",
+        code: "CHECK_FAILED",
+      },
+      { valid: false, error: "Length 5 exceeds maximum 1", code: "MAX_LENGTH_EXCEEDED" },
+    ]);
   });
 });
 

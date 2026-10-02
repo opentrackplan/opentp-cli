@@ -302,13 +302,8 @@ export function resolveEventPayload(
   const issues: PayloadIssue[] = [];
 
   const targetsConfig = config.spec.events.payload.targets;
-  const allTargets = targetsConfig.all ?? [];
-  if (!Array.isArray(allTargets) || allTargets.length === 0) {
-    issues.push({
-      path: "spec.events.payload.targets.all",
-      message: "Missing or empty targets.all",
-    });
-  }
+  // An invalid targets.all is reported once against opentp.yaml (validateConfig)
+  const allTargets: string[] = Array.isArray(targetsConfig.all) ? targetsConfig.all : [];
   const allTargetSet = new Set(allTargets);
 
   // Normalize to selector map
@@ -354,6 +349,16 @@ export function resolveEventPayload(
       issues.push({
         path: `payload.${selectorName}`,
         message: `Unknown target selector '${selectorName}'. Define it in spec.events.payload.targets or include it in targets.all.`,
+      });
+      continue;
+    }
+
+    // Group members outside targets.all are reported once against opentp.yaml (validateConfig).
+    // A selector left with no known target would never be validated, so it is an error here.
+    if (!selectorTargets.some((target) => allTargetSet.has(target))) {
+      issues.push({
+        path: `payload.${selectorName}`,
+        message: `Target selector '${selectorName}' does not cover any target listed in spec.events.payload.targets.all`,
       });
       continue;
     }

@@ -64,6 +64,8 @@ spec:
             title: Verb
             type: string
             required: true
+            # No such dictionary: reported once against opentp.yaml
+            dict: taxonomy/verbs
           object:
             title: Object
             type: string
@@ -75,12 +77,29 @@ spec:
         x-opentp:
           checks:
             unknown-check: true
+      team:
+        title: Team
+        type: string
+        required: false
+        # No such dictionary: reported once against opentp.yaml
+        dict: taxonomy/teams
+      ticket:
+        title: Ticket
+        type: string
+        required: false
+        x-opentp:
+          checks:
+            # External check that throws (external-rules/throwing-check)
+            throwing-check: true
 
     payload:
       targets:
         all: [web, ios, android]
         mobile: [ios, android]
         web_ios: [web, ios]
+        # "desktop" is not in targets.all: reported once against opentp.yaml, and a payload
+        # selector "legacy" covers no target
+        legacy: [desktop]
       schema:
         application_id:
           type: string
@@ -116,3 +135,8 @@ spec:
           type: string
           required: true
           pattern: "^[A-Z]+-[0-9]+$"
+
+  # "desktop" is not in spec.events.payload.targets.all: reported once against opentp.yaml
+  targets:
+    desktop:
+      title: Desktop

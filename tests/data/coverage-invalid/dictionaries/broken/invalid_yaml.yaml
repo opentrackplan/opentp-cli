@@ -1,0 +1,6 @@
+opentp: 2026-01
+
+# Broken YAML (a flow sequence that is never closed): the dictionary cannot be loaded.
+dict:
+  type: string
+  values: [one, two
