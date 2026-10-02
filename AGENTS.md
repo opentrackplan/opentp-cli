@@ -765,19 +765,14 @@ Pick the layer by where the problem lives, so that each problem is reported exac
   window fails (404 on the binary, or a missing `SHA256SUMS`, which is fatal for versions after
   0.7.4); it never installs unverified, and it never mixes the files of two releases (the tag is
   resolved once).
-- **Distribution state (as of 2026-10-02).** `package.json` is 0.8.0; the latest tag is `v0.7.4`
-  (all four assets live, no `SHA256SUMS`, so the installers warn and install it unverified) until
-  `v0.8.0` is tagged and released. The installers install the latest release (they used to pin 0.7.3).
-  The npm package `opentp` (`0.0.1`, `0.5.0`; spec 2025-06, cannot read 2026-01 plans) is obsolete and
-  will not be updated (Rule 9); README and `docs/getting-started.md` say so once and tell users to
-  `npm uninstall -g opentp`. The opentp.dev copies of `docs/` still show npm/npx instructions until the
-  website re-syncs the docs. Live on 2026-10-02, `https://opentp.dev/install` returns 404 (the old
-  `/install` rule pointed at `.../opentp-cli/main/install.sh`; the file is `install/install.sh`) and
-  `https://opentp.dev/schemas/2026-01/*` (printed by `--version`) 302-redirects to jsDelivr
-  `opentp-spec@2025-12/schemas/2026-01/...` (404). Both are fixed in `opentp-website/public/_redirects`
-  (302 to `raw.githubusercontent.com/.../main/install/install.sh`, and per-version schema rules) and
-  work once that website change is deployed: check `curl -sI https://opentp.dev/install`. They are
-  website fixes, not changes in this repo.
+- **Distribution state (as of 2026-10-02).** The latest release is `v0.8.0` (tag = `01c27ce`): four
+  binaries plus `SHA256SUMS`, each binary smoke-tested on its own runner. The installers install the
+  latest release and verify it (they used to pin 0.7.3); releases up to `v0.7.4` have no `SHA256SUMS`
+  and install with a warning. The npm package `opentp` (`0.0.1`, `0.5.0`; spec 2025-06, cannot read
+  2026-01 plans) is obsolete and will not be updated (Rule 9); README and `docs/getting-started.md`
+  say so once and tell users to `npm uninstall -g opentp`. opentp.dev serves `/install` and
+  `/install.ps1` (302 to `raw.githubusercontent.com/.../main/install/...`) and the per-version schema
+  URLs, and its CLI docs are re-synced from `v0.8.0` (website `6d5a517`).
 
 - **`install.ps1` has never been run** (no PowerShell in this environment). It mirrors `install.sh`
   line by line, but PowerShell specifics (native `curl.exe` output capture, `throw` under
