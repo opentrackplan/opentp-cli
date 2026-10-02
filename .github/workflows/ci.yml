@@ -34,26 +34,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # package-lock.json comes from macOS and lacks Biome's Linux binary package.
-      # Fetch only that package (with retries) instead of re-resolving the whole
-      # dependency tree, so the rest of node_modules stays exactly as in the lockfile.
-      - name: Ensure Biome binary (Linux)
-        run: |
-          BIOME_VERSION="$(node -p "require('./node_modules/@biomejs/biome/package.json').version")"
-          PKG="@biomejs/cli-linux-x64@${BIOME_VERSION}"
-          for attempt in 1 2 3; do
-            if TGZ="$(npm pack "$PKG" --silent --pack-destination "$RUNNER_TEMP")"; then
-              mkdir -p node_modules/@biomejs/cli-linux-x64
-              tar -xzf "$RUNNER_TEMP/$TGZ" -C node_modules/@biomejs/cli-linux-x64 --strip-components=1
-              node_modules/.bin/biome --version
-              exit 0
-            fi
-            echo "::warning::npm pack $PKG failed (attempt $attempt), retrying"
-            sleep $((attempt * 10))
-          done
-          echo "::error::could not fetch $PKG"
-          exit 1
-
       - name: Lint
         run: npm run lint
 

@@ -55,7 +55,7 @@ and exports the plan through generators.
 | Dev tooling | vitest 4.0.16, Biome 2.3.11, esbuild 0.25.x, TypeScript 5.9.x, `bun` ^1.3.5 as an npm devDependency |
 | Node | `engines`: `^20.19.0 \|\| >=22.12.0` (what vite 7 / vitest 4 need; Node 18 is EOL). It describes only the development toolchain (build from source, tests); users run the binaries, which embed the Bun runtime and need no Node.js. Documented in README and getting-started ("From source") and CONTRIBUTING. The bundle's node18 syntax target does not make older runtimes supported, they are not tested. CI tests Node 20 and 22. Verified on 22.15 |
 | TypeScript configs | `tsconfig.json`: `src/` without specs (`resolveJsonModule` for `src/meta.ts`). `tsconfig.test.json` extends it and adds `*.spec.ts`. Both must have 0 errors |
-| CI (`ci.yml`) | Push/PR to main, Node 20 + 22 matrix; also called by `release.yml` (`workflow_call`). `npm ci`, Biome Linux-binary workaround (the macOS-generated lockfile lacks `@biomejs/cli-linux-x64`, so CI fetches only that package with `npm pack` and retries, leaving the rest of `node_modules` as locked), lint, `tsc` (both configs), test, build, smoke tests (fixtures + opentp-spec `examples/{simple,full}` at the tag that equals `specVersion`) |
+| CI (`ci.yml`) | Push/PR to main, Node 20 + 22 matrix; also called by `release.yml` (`workflow_call`). `npm ci`, lint, `tsc` (both configs), test, build, smoke tests (fixtures + opentp-spec `examples/{simple,full}` at the tag that equals `specVersion`) |
 | Release (`release.yml`) | On `v*` tags: tag = `package.json` version check, CI as `verify`, four bun binaries (each smoke-tested on its own runner), `SHA256SUMS`, GitHub Release (notes from `CHANGELOG.md`; `-` in the tag = pre-release). Nothing goes to npm. See Release process |
 
 ## Commands
@@ -685,6 +685,8 @@ Pick the layer by where the problem lives, so that each problem is reported exac
 - **Commits:** conventional prefixes per CONTRIBUTING.md (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`).
 
 ## Known issues & traps (verified 2026-10-02)
+
+- **Lockfile platforms.** `package-lock.json` must contain the optional platform packages for every OS (`@rollup/rollup-linux-x64-gnu`, `@esbuild/linux-x64`, `@biomejs/cli-linux-x64`, `@oven/bun-linux-x64`, ...). npm 10 on macOS can drop the non-macOS entries when it updates the lockfile, and then `npm ci` on the Linux CI runners misses native binaries (vitest, esbuild and Biome fail). Update dependencies with npm 11 or later (`npx npm@11 install`) and check with `grep -c '"node_modules/@rollup/rollup-linux-x64-gnu"' package-lock.json` (must be 1).
 
 - **Files that do not match the path template are skipped with no message** (for example a file one
   directory too deep, or `.yml` vs a `.yaml` template). Broken matching files are errors now, but a
