@@ -34,6 +34,34 @@ interface Keygen {
   transforms: Record<string, (value: string) => string>;
 }
 
+/** What loading one event document needs besides the document: built once per plan load */
+export interface EventLoadContext {
+  config: OpenTPConfig;
+  fileTemplate: string;
+  /** null when keygen is not configured or not usable (no expected key is generated) */
+  keygen: Keygen | null;
+}
+
+/** The result of loading one event document (see loadEventDocument) */
+export type EventDocumentResult =
+  | { status: "loaded"; event: ResolvedEvent }
+  /** The path does not match spec.paths.events.template: loadEvents skips such files silently */
+  | { status: "unmatched" }
+  | { status: "failed"; issue: EventLoadIssue };
+
+/**
+ * Prepares loading single event documents. A transform step factory that throws while the keygen
+ * pipelines are built is pushed to `issues` (against opentp.yaml); other keygen problems are reported
+ * once by validateConfig, and they only mean that no expected key is generated.
+ */
+export function createEventLoadContext(
+  config: OpenTPConfig,
+  fileTemplate: string,
+  issues: EventLoadIssue[] = [],
+): EventLoadContext {
+  return { config, fileTemplate, keygen: prepareKeygen(config, issues) };
+}
+
 /**
  * Loads all events from a directory.
  *
@@ -69,73 +97,92 @@ export function loadEvents(
   const allFiles = scanDirectory(eventsPath);
   const yamlFiles = filterByExtension(allFiles, [".yaml", ".yml"]);
 
-  const keygen = prepareKeygen(config, issues);
+  const context = createEventLoadContext(config, fileTemplate, issues);
 
   for (const [relativePath, absolutePath] of yamlFiles) {
-    // Extract variables from file path
-    const pathVariables = extractTemplateVariables(relativePath, fileTemplate);
-    if (!pathVariables) {
-      // File doesn't match the template - skip
-      continue;
-    }
+    const result = loadEventDocument(context, relativePath, absolutePath, () =>
+      loadYaml<unknown>(absolutePath),
+    );
+    if (result.status === "loaded") events.push(result.event);
+    else if (result.status === "failed") issues.push(result.issue);
+  }
 
-    const fail = (path: string, message: string): void => {
-      issues.push({ file: relativePath, path, message });
-    };
+  return { events, issues };
+}
 
-    // Load file contents
-    let document: unknown;
+/**
+ * Loads one event document the way loadEvents loads a file: the taxonomy comes from the path
+ * (`relativePath`, relative to the events root and matched against the path template) and from
+ * `event.taxonomy`, and the expected key is generated. `readDocument` returns the parsed YAML; it is
+ * called only when the path matches, and a throw becomes a load issue (YAML errors keep their line
+ * and column). Requires a usable path template (see getMatchTemplateProblems).
+ */
+export function loadEventDocument(
+  context: EventLoadContext,
+  relativePath: string,
+  absolutePath: string,
+  readDocument: () => unknown,
+): EventDocumentResult {
+  const { config, fileTemplate, keygen } = context;
+
+  // Extract variables from file path
+  const pathVariables = extractTemplateVariables(relativePath, fileTemplate);
+  if (!pathVariables) {
+    return { status: "unmatched" };
+  }
+
+  const fail = (path: string, message: string): EventDocumentResult => ({
+    status: "failed",
+    issue: { file: relativePath, path, message },
+  });
+
+  let document: unknown;
+  try {
+    document = readDocument();
+  } catch (error) {
+    return fail("", formatLoadError(error));
+  }
+
+  if (!isYamlMapping(document)) {
+    return fail("", "Expected a mapping with 'opentp' and 'event'");
+  }
+  if (document.event === undefined || document.event === null) {
+    return fail("event", "Missing required field: event");
+  }
+  if (!isYamlMapping(document.event)) {
+    return fail("event", "Invalid field: event must be a mapping");
+  }
+  if (document.event.taxonomy === undefined || document.event.taxonomy === null) {
+    return fail("event.taxonomy", "Missing required field: event.taxonomy");
+  }
+  if (!isYamlMapping(document.event.taxonomy)) {
+    return fail("event.taxonomy", "Invalid field: event.taxonomy must be a mapping");
+  }
+
+  const eventFile = document as unknown as EventFile;
+
+  // Extract taxonomy from path and file
+  let taxonomy: Record<string, unknown>;
+  try {
+    taxonomy = extractTaxonomy(pathVariables, eventFile, config);
+  } catch (error) {
+    return fail("event.taxonomy", `Cannot read taxonomy: ${formatLoadError(error)}`);
+  }
+
+  // Generate expected key
+  let expectedKey: string | null = null;
+  let keygenError: string | undefined;
+  if (keygen) {
     try {
-      document = loadYaml<unknown>(absolutePath);
+      expectedKey = generateEventKey(taxonomy, keygen.template, keygen.transforms);
     } catch (error) {
-      fail("", formatLoadError(error));
-      continue;
+      keygenError = error instanceof Error ? error.message : String(error);
     }
+  }
 
-    if (!isYamlMapping(document)) {
-      fail("", "Expected a mapping with 'opentp' and 'event'");
-      continue;
-    }
-    if (document.event === undefined || document.event === null) {
-      fail("event", "Missing required field: event");
-      continue;
-    }
-    if (!isYamlMapping(document.event)) {
-      fail("event", "Invalid field: event must be a mapping");
-      continue;
-    }
-    if (document.event.taxonomy === undefined || document.event.taxonomy === null) {
-      fail("event.taxonomy", "Missing required field: event.taxonomy");
-      continue;
-    }
-    if (!isYamlMapping(document.event.taxonomy)) {
-      fail("event.taxonomy", "Invalid field: event.taxonomy must be a mapping");
-      continue;
-    }
-
-    const eventFile = document as unknown as EventFile;
-
-    // Extract taxonomy from path and file
-    let taxonomy: Record<string, unknown>;
-    try {
-      taxonomy = extractTaxonomy(pathVariables, eventFile, config);
-    } catch (error) {
-      fail("event.taxonomy", `Cannot read taxonomy: ${formatLoadError(error)}`);
-      continue;
-    }
-
-    // Generate expected key
-    let expectedKey: string | null = null;
-    let keygenError: string | undefined;
-    if (keygen) {
-      try {
-        expectedKey = generateEventKey(taxonomy, keygen.template, keygen.transforms);
-      } catch (error) {
-        keygenError = error instanceof Error ? error.message : String(error);
-      }
-    }
-
-    events.push({
+  return {
+    status: "loaded",
+    event: {
       filePath: absolutePath,
       relativePath,
       opentp: eventFile.opentp,
@@ -147,10 +194,8 @@ export function loadEvents(
       aliases: eventFile.event.aliases,
       ignore: eventFile.event.ignore ?? [],
       payload: eventFile.event.payload,
-    });
-  }
-
-  return { events, issues };
+    },
+  };
 }
 
 /**

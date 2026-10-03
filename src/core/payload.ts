@@ -588,3 +588,45 @@ export function resolveEventPayload(
 
   return { payload: { targets: resolvedTargets }, issues };
 }
+
+/** The effective schema of every version of one target (see resolveEffectivePayload) */
+export interface EffectiveTargetPayload {
+  target: string;
+  /** The current version key (UNVERSIONED_VERSION_KEY for an unversioned payload) */
+  current: string;
+  aliases: Record<string, string>;
+  /** Version key -> effective schema */
+  versions: Record<string, Record<string, Field>>;
+}
+
+/**
+ * The effective payload schema of every covered target and version: the base schema
+ * (`spec.events.payload.schema`), then `spec.targets.<target>.schema`, then the event's version
+ * schema (with `$ref` resolved), merged with mergeSchemaMaps in the same order as validatePayload.
+ * Layer conflicts are not reported here (validatePayload does); resolution issues are returned.
+ */
+export function resolveEffectivePayload(
+  payload: EventPayload,
+  config: OpenTPConfig,
+): { targets: Record<string, EffectiveTargetPayload>; issues: PayloadIssue[] } {
+  const { payload: resolved, issues } = resolveEventPayload(payload, config);
+  const baseSchema = config.spec.events.payload.schema ?? {};
+  const targets: Record<string, EffectiveTargetPayload> = {};
+
+  for (const [targetId, targetPayload] of Object.entries(resolved.targets)) {
+    const targetBase = config.spec.targets?.[targetId]?.schema ?? {};
+    const baseForTarget = mergeSchemaMaps(baseSchema, targetBase);
+    const versions: Record<string, Record<string, Field>> = {};
+    for (const [versionKey, version] of Object.entries(targetPayload.versions)) {
+      versions[versionKey] = mergeSchemaMaps(baseForTarget, version.schema);
+    }
+    targets[targetId] = {
+      target: targetId,
+      current: targetPayload.current,
+      aliases: targetPayload.aliases,
+      versions,
+    };
+  }
+
+  return { targets, issues };
+}
