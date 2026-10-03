@@ -1078,8 +1078,10 @@ unusable until it is in both tables.
   scripts rewrite them: `index.md` -> `./<page>`, every other page -> `../<page>/`. Other
   root-absolute links (`/schema/...`, `/transforms`, `/rules`) are rewritten only by per-file `perl`
   lines (today `getting-started.md` and `generate.md`); avoid new ones. These links do not work on
-  GitHub (known). Anchors follow Starlight's slugger: `## Plugins and --allow-plugins` ->
-  `#plugins-and---allow-plugins`; a repeated heading gets `-1`.
+  GitHub (known). Anchors: GitHub and Starlight slug headings differently when they contain
+  punctuation (`## Plugins and --allow-plugins` is `#plugins-and---allow-plugins` on GitHub and
+  `#plugins-and-allow-plugins` on opentp.dev), so link only headings made of words and spaces
+  (e.g. `## Plugins` -> `#plugins`); a repeated heading gets `-1`.
 - Keep README/docs examples runnable against the current CLI; paste real output, not hand-written
   samples. Check every full YAML example by putting it into a scratch plan and running the built CLI
   (and the spec's `scripts/validate.ts` `validateNode` for plan files); output with absolute paths is

@@ -234,7 +234,7 @@ Unset or empty, `OPENTP_WEBHOOK_ENV` allows no variables (opentp up to 0.9.x rea
 
 ### Security
 
-`OPENTP_WEBHOOK_ENV` limits which variables a webhook can read, not where it sends them. Webhooks are defined only in `opentp.cli.yaml` (the plan can only refer to a binding by its id), so protect that file like code (see the [CODEOWNERS recommendation](/cli/config#plugins-and---allow-plugins)), and do not run webhook checks that use secrets on changes you do not trust (for example on pull requests from forks). `opentp mcp` never runs a webhook binding for a draft that an agent sends; it does run them for the files on disk.
+`OPENTP_WEBHOOK_ENV` limits which variables a webhook can read, not where it sends them. Webhooks are defined only in `opentp.cli.yaml` (the plan can only refer to a binding by its id), so protect that file like code (see the [CODEOWNERS recommendation](/cli/config#plugins)), and do not run webhook checks that use secrets on changes you do not trust (for example on pull requests from forks). `opentp mcp` never runs a webhook binding for a draft that an agent sends; it does run them for the files on disk.
 
 ## Custom Checks
 
@@ -264,7 +264,7 @@ taxonomy:
 
 Load it in one of two ways:
 
-- `checks.plugins: [tools/checks]` in `opentp.cli.yaml` (relative to that file), loaded only with `--allow-plugins` or `OPENTP_ALLOW_PLUGINS=1` (see [Plugins and --allow-plugins](/cli/config#plugins-and---allow-plugins));
+- `checks.plugins: [tools/checks]` in `opentp.cli.yaml` (relative to that file), loaded only with `--allow-plugins` or `OPENTP_ALLOW_PLUGINS=1` (see [Plugins and --allow-plugins](/cli/config#plugins));
 - `--external-rules ./tools/checks` on the command line (relative to the current directory, always loaded):
 
 ```bash

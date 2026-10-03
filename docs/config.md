@@ -130,7 +130,7 @@ keygen:
 |---|---|
 | `template` | Required. The key template (grammar below) |
 | `transforms` | Named pipelines: `<pipeline>: [<step>, ...]`. Each step is a step name (`lower`) or a mapping with one key, the step name, and its parameters (`replace: { from: " ", to: "_" }`). See [Transforms](/cli/transforms) for the built-in steps |
-| `plugins` | Directories with custom transform steps (see [Plugins](#plugins-and---allow-plugins)) |
+| `plugins` | Directories with custom transform steps (see [Plugins](#plugins)) |
 
 With `keygen`:
 
@@ -194,7 +194,7 @@ checks:
 
 | Key | Meaning |
 |---|---|
-| `plugins` | Directories with custom checks (see [Plugins](#plugins-and---allow-plugins)) |
+| `plugins` | Directories with custom checks (see [Plugins](#plugins)) |
 | `bindings.<id>` | A check id the plan can use: exactly one of `rule` (a built-in or plugin check, with default `params`) or `webhook` (an HTTP endpoint) |
 | `severity.<rule>` | `off`, `warning` (the default) or `error` for the tool rules `overlap` and `unknownCheck` |
 
@@ -444,7 +444,7 @@ generate:
 
 | Key | Meaning |
 |---|---|
-| `plugins` | Directories with custom generators (see [Plugins](#plugins-and---allow-plugins)) |
+| `plugins` | Directories with custom generators (see [Plugins](#plugins)) |
 | `run` | What `opentp generate` without a generator name runs, in order |
 
 Each `run` entry:
@@ -497,7 +497,7 @@ mcp:
 
 `opentp mcp` reads the `mcp` section once, when it starts; the other sections are reloaded with the plan when a file changes. See [mcp](/cli/mcp).
 
-## Plugins and --allow-plugins
+## Plugins
 
 Plugins are JavaScript modules that run with the rights of the user who runs opentp: custom transform steps for `keygen` (`keygen.plugins`), custom checks (`checks.plugins`) and custom generators (`generate.plugins`). Each entry is a directory, relative to `opentp.cli.yaml`; every `<dir>/<name>/index.js` in it is loaded as an ES module or a CommonJS module, depending on the nearest `package.json`.
 
@@ -536,7 +536,7 @@ Set `OPENTP_ALLOW_PLUGINS=1` only in CI jobs whose code is reviewed that way, an
 - **Write files with `generate.run`**: `opentp generate` without a generator name writes every `output` and reads every template `file`, but only inside the directory of `opentp.cli.yaml` (see [generate](#generate)). Inside it an entry can overwrite any file, also one that git does not track and that another tool runs later (for example under `node_modules`). In a job that runs on untrusted changes, run `opentp generate` after the tools that could run such files, or not at all.
 - **Fetch a plan** (`plan:` in an application repository): opentp fetches the named git repository with your git credentials into the cache. Nothing from it runs: its plugins and webhook bindings are ignored.
 
-Plugins (`keygen.plugins`, `checks.plugins`, `generate.plugins`, see [Plugins](#plugins-and---allow-plugins)) and plugin generators can do anything the user can, which is why they need `--allow-plugins`.
+Plugins (`keygen.plugins`, `checks.plugins`, `generate.plugins`, see [Plugins](#plugins)) and plugin generators can do anything the user can, which is why they need `--allow-plugins`.
 
 ## Application repositories
 

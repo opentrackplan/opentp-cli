@@ -99,4 +99,4 @@ Load custom steps in one of two ways:
   opentp validate --external-transforms ./tools/transforms
   ```
 
-Each `<dir>/<name>/index.js` is loaded as an ES module or a CommonJS module, depending on the nearest `package.json`. Steps are checked when the plan is loaded, so `validate`, `fix`, `generate` and `mcp` all need the plugins (pass `--allow-plugins` or the same `--external-transforms` to each). See [Plugins and --allow-plugins](/cli/config#plugins-and---allow-plugins).
+Each `<dir>/<name>/index.js` is loaded as an ES module or a CommonJS module, depending on the nearest `package.json`. Steps are checked when the plan is loaded, so `validate`, `fix`, `generate` and `mcp` all need the plugins (pass `--allow-plugins` or the same `--external-transforms` to each). See [Plugins and --allow-plugins](/cli/config#plugins).

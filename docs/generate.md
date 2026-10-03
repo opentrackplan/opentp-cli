@@ -294,7 +294,7 @@ The context:
 
 Paths in `files` are relative to `--root` (absolute paths are used as they are); directories are created. A generator that throws fails the command (`Generator failed`, exit code `1`).
 
-Load generators with `--external-generators <dir>` (resolved against the current directory, always loaded) or with `generate.plugins` in `opentp.cli.yaml` (resolved against that file, loaded only with `--allow-plugins` or `OPENTP_ALLOW_PLUGINS=1`; see [Plugins](/cli/config#plugins-and---allow-plugins)). Each `<dir>/<name>/index.js` is loaded as an ES module or a CommonJS module, depending on the nearest `package.json` (`"type": "module"` or not). A generator registers under its `name`; a plugin with the name of a built-in generator replaces it.
+Load generators with `--external-generators <dir>` (resolved against the current directory, always loaded) or with `generate.plugins` in `opentp.cli.yaml` (resolved against that file, loaded only with `--allow-plugins` or `OPENTP_ALLOW_PLUGINS=1`; see [Plugins](/cli/config#plugins)). Each `<dir>/<name>/index.js` is loaded as an ES module or a CommonJS module, depending on the nearest `package.json` (`"type": "module"` or not). A generator registers under its `name`; a plugin with the name of a built-in generator replaces it.
 
 ## Application repositories
 

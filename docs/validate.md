@@ -66,7 +66,7 @@ opentp validate --external-rules ./my-rules
 opentp validate --allow-plugins          # the checks.plugins of opentp.cli.yaml
 ```
 
-See [Custom Checks](/cli/rules#custom-checks) and [Plugins and --allow-plugins](/cli/config#plugins-and---allow-plugins).
+See [Custom Checks](/cli/rules#custom-checks) and [Plugins and --allow-plugins](/cli/config#plugins).
 
 ### In CI or scripts
 
