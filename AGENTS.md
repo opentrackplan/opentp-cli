@@ -11,7 +11,7 @@ upgrades old plans (`opentp migrate`) and serves the plan to AI agents (`opentp 
   npm, now or later**; `package.json` is `"private": true` and the old npm package `opentp` (0.5.0) is
   obsolete. npm is only a development tool here. A Bun-only toolchain is a possible future direction,
   not decided.
-- **Version:** `package.json` `version` (**0.10.0**, not released yet; the latest release is 0.9.1).
+- **Version:** `package.json` `version` (**0.10.0**, released 2026-10-03 as tag `v0.10.0`).
   Release and installer state: see "Distribution state" under Known issues.
 - **Spec support:** **exactly `2026-09`** (`package.json` `specVersion`, read by `src/meta.ts`). A
   `2026-01` plan gets the migrate guidance (exit 2); any other `opentp:` value is a hard error.
@@ -1211,10 +1211,10 @@ unusable until it is in both tables.
 - **Installer "latest" window:** `softprops/action-gh-release` uploads assets one by one after creating
   the release, so "latest" points at the new release before its files are there. An install in that
   window fails; it never installs unverified, and it never mixes the files of two releases.
-- **Distribution state (as of 2026-10-03).** The latest release is `v0.9.1` (spec `2026-01`); `main`
-  is 0.10.0 (spec `2026-09`), not released. Its CI needs the spec tag `2026-09` (not cut yet), and
-  `https://opentp.dev/schemas/cli/*` (prepared in the website, not deployed) needs the `v0.10.0` tag.
-  The installers install the latest release and verify it; releases up to `v0.7.4` have no
+- **Distribution state (as of 2026-10-03).** The latest release is `v0.10.0` (spec `2026-09`; tag
+  at `07e2f94`, four binaries + `SHA256SUMS`, verified after publishing). `v0.9.1` is the last release
+  that reads `2026-01`. `https://opentp.dev/schemas/cli/*` points at `opentp-cli@v0.10.0/schemas/`;
+  bump that website rule when a release changes `schemas/opentp.cli.schema.json`. The installers install the latest release and verify it; releases up to `v0.7.4` have no
   `SHA256SUMS` and install with a warning. The npm package `opentp` (`0.0.1`, `0.5.0`) is obsolete
   and will not be updated (Rule 9).
 - **`install.ps1` has never been run** (no PowerShell in this environment). It mirrors `install.sh`
