@@ -76,7 +76,7 @@ describe("describePlan", () => {
       mobile: ["ios", "android"],
     });
     expect(description.targetSchemas).toHaveProperty("ios.device_model");
-    expect(description.counts).toEqual({ events: 4, dictionaries: 4, loadProblems: 0 });
+    expect(description.counts).toEqual({ events: 4, dictionaries: 5, loadProblems: 0 });
   });
 });
 

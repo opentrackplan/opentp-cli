@@ -238,7 +238,7 @@ describe("main", () => {
     stderr.length = 0;
     expect(await main(["--root", fixture("coverage-invalid")])).toBe(EXIT_FAILURE);
     expect(stdout.join("\n")).toContain("[opentp.yaml]");
-    expect(stderr.at(-1)).toMatch(/^✗ ✗ Validation failed errorCount=\d+ eventCount=19$/);
+    expect(stderr.at(-1)).toMatch(/^✗ Validation failed errorCount=\d+ eventCount=20$/);
   });
 
   it("prints only the JSON document on stdout with --json, also with -v", async () => {
@@ -246,7 +246,7 @@ describe("main", () => {
     expect(await main(args)).toBe(EXIT_FAILURE);
     expect(stdout).toHaveLength(1);
     const result = JSON.parse(stdout[0]);
-    expect(result).toMatchObject({ success: false, events: 19 });
+    expect(result).toMatchObject({ success: false, events: 20 });
     expect(result.errors.length).toBeGreaterThan(0);
     // Debug logs went to stderr
     expect(stderr.some((line) => line.startsWith("⋯ Loading config"))).toBe(true);
@@ -345,7 +345,7 @@ describe("main", () => {
     // The load problems and the summary go to stderr
     expect(stderr.join("\n")).toContain("[opentp.yaml]");
     expect(stderr.at(-1)).toMatch(
-      /^✗ ✗ Generation aborted: the tracking plan could not be loaded \(run 'opentp validate'\) errorCount=\d+ eventCount=19$/,
+      /^✗ Generation aborted: the tracking plan could not be loaded \(run 'opentp validate'\) errorCount=\d+ eventCount=20$/,
     );
 
     stderr.length = 0;

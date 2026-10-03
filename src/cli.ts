@@ -289,6 +289,7 @@ protocol for 'mcp').
 Environment:
   OPENTP_ROOT            Default for --root
   OPENTP_LOG_LEVEL       trace, debug, info (default), warn, error or fatal
+  OPENTP_WEBHOOK_ENV     Variables that webhook checks may use in \${VAR} (comma-separated)
 
 Exit codes:
   0  Success
@@ -464,7 +465,7 @@ async function runValidate(options: CliOptions): Promise<number> {
       logger.info({ count: events.length }, "✓ All events are valid");
     } else {
       console.log(formatErrors(errors));
-      logger.error({ errorCount: errors.length, eventCount: events.length }, "✗ Validation failed");
+      logger.error({ errorCount: errors.length, eventCount: events.length }, "Validation failed");
     }
   }
 
@@ -539,7 +540,7 @@ async function runGenerate(options: CliOptions): Promise<number> {
     console.error(formatErrors(loadErrors));
     logger.error(
       { errorCount: loadErrors.length, eventCount: events.length },
-      "✗ Generation aborted: the tracking plan could not be loaded (run 'opentp validate')",
+      "Generation aborted: the tracking plan could not be loaded (run 'opentp validate')",
     );
     return EXIT_FAILURE;
   }

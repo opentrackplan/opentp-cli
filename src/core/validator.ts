@@ -1412,6 +1412,31 @@ async function validatePayload(
             }
           }
         }
+
+        // A dict override narrows the base enum or dict: every value of the event's dictionary must
+        // be allowed by the base. An unknown dictionary on either side is reported elsewhere.
+        // opentp.yaml is not schema-checked, so a base enum that is not a list is skipped here.
+        const baseEnum = Array.isArray(specFieldConfig?.enum) ? specFieldConfig.enum : undefined;
+        if (fieldValue.dict !== undefined && (baseEnum || specFieldConfig?.dict)) {
+          const eventValues = getDictValues(fieldValue.dict, dictionaries);
+          const baseValues: unknown[] | null = specFieldConfig?.dict
+            ? getDictValues(specFieldConfig.dict, dictionaries)
+            : (baseEnum ?? null);
+          if (eventValues && baseValues) {
+            const invalid = eventValues.filter((v) => !baseValues.includes(v));
+            if (invalid.length > 0) {
+              const base = specFieldConfig?.dict
+                ? `dictionary '${specFieldConfig.dict}'`
+                : `base enum [${baseValues.map(String).join(", ")}]`;
+              errors.push({
+                event: event.relativePath,
+                path: `${fieldPath}.dict`,
+                message: `Dictionary '${fieldValue.dict}' has values [${invalid.map(String).join(", ")}] that are not in ${base}`,
+                severity: "error",
+              });
+            }
+          }
+        }
       }
 
       // Validate effective fields (fixed values, constraints, x-opentp checks, pii)

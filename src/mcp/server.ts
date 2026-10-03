@@ -28,13 +28,13 @@ import {
 } from "./tools";
 
 const READ_ONLY = { readOnlyHint: true, idempotentHint: true, openWorldHint: false } as const;
-/** Validation runs the plan's checks, and a `webhook` check from opentp.yaml calls its URL */
+/** Validation runs the plan's checks, and a `webhook` check (opentp.yaml or an event file) calls its URL */
 const VALIDATES = { readOnlyHint: true, idempotentHint: true, openWorldHint: true } as const;
 
 const INSTRUCTIONS = `OpenTrackPlan tracking plan (read-only tools).
 Start with describe_plan to learn the taxonomy, targets, common payload fields and key rules.
 Find events with search_events (plain words work best), then read one with get_event.
-To add or change an event: call suggest_event (file path, generated key, YAML skeleton), write the YAML file yourself, then call validate_event_draft (before writing) or validate_plan (after). These tools never write files. Validation runs the plan's checks, including webhook checks configured in opentp.yaml.`;
+To add or change an event: call suggest_event (file path, generated key, YAML skeleton), write the YAML file yourself, then call validate_event_draft (before writing) or validate_plan (after). These tools never write files. Validation runs the plan's checks, including webhook checks from opentp.yaml and from event files on disk.`;
 
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;

@@ -86,6 +86,11 @@ arch="$(uname -m)"
 asset=""
 case "$os" in
   Darwin)
+    # A shell running under Rosetta reports x86_64 on Apple Silicon: install the native binary
+    if [[ "$arch" == x86_64 && "$(/usr/sbin/sysctl -n sysctl.proc_translated 2>/dev/null || true)" == 1 ]]; then
+      echo "Running under Rosetta on Apple Silicon: installing the native arm64 binary"
+      arch=arm64
+    fi
     case "$arch" in
       arm64) asset="opentp-mac" ;;
       x86_64) asset="opentp-mac-intel" ;;
@@ -141,8 +146,6 @@ sums_tmp="$(mktemp "${TMPDIR:-/tmp}/opentp-sums.XXXXXX")"
 cleanup() { rm -f "$tmp" "$sums_tmp" 2>/dev/null || true; }
 trap cleanup EXIT
 
-mkdir -p "$INSTALL_DIR"
-
 echo "Downloading ${url}"
 curl_args=(--fail --location --show-error --output "$tmp")
 if [[ -t 1 ]]; then
@@ -154,12 +157,12 @@ curl "${curl_args[@]}" "$url" || error "Could not download ${url}"
 
 # Without --fail, so a missing file (older releases) can be told apart from other errors.
 sums_status="$(curl --location --silent --show-error --output "$sums_tmp" --write-out '%{http_code}' "$sums_url")" ||
-  error "Could not download ${sums_url}"
+  error "Could not download ${sums_url}. Nothing was installed."
 
 case "$sums_status" in
   200)
     expected="$(awk -v name="$asset" '{ file = $2; sub(/^\*/, "", file); if (file == name) { print $1; exit } }' "$sums_tmp" | tr '[:upper:]' '[:lower:]')"
-    [[ -n "$expected" ]] || error "SHA256SUMS has no entry for ${asset} (${sums_url})"
+    [[ -n "$expected" ]] || error "SHA256SUMS has no entry for ${asset} (${sums_url}). Nothing was installed."
     actual="$(sha256_of "$tmp" | tr '[:upper:]' '[:lower:]')" || actual=""
     if [[ -z "$actual" ]]; then
       warn "Neither sha256sum nor shasum is available; skipping checksum verification."
@@ -177,10 +180,12 @@ case "$sums_status" in
     fi
     ;;
   *)
-    error "Could not download ${sums_url} (HTTP ${sums_status})"
+    error "Could not download ${sums_url} (HTTP ${sums_status}). Nothing was installed."
     ;;
 esac
 
+# Only now that the binary is verified: an aborted install leaves no empty directory behind
+mkdir -p "$INSTALL_DIR"
 chmod +x "$tmp"
 mv -f "$tmp" "$INSTALL_PATH"
 

@@ -122,6 +122,16 @@ webhook:
     Authorization: "Bearer ${API_KEY}"
 ```
 
+List the variables that webhook checks may read in `OPENTP_WEBHOOK_ENV`, in the environment of the run (for example in your CI job), not in the plan:
+
+```bash
+OPENTP_WEBHOOK_ENV=VALIDATOR_URL,API_KEY opentp validate
+```
+
+With `OPENTP_WEBHOOK_ENV` set, a check that references any other variable fails (`Webhook check uses environment variables that OPENTP_WEBHOOK_ENV does not allow`) and sends no request. To allow none, set it to an empty value, or to `,` where an empty variable cannot be set (Windows PowerShell 5.1, cmd). Without it, every variable is read as in 0.9.0 and opentp prints a warning per variable. A later minor release will make an unset `OPENTP_WEBHOOK_ENV` allow no variables.
+
+`OPENTP_WEBHOOK_ENV` limits which variables a webhook check can read, not where it sends them. Webhook checks can be defined, or overridden, in `opentp.yaml` and in event files, so anyone who can change the plan can send a listed variable to a URL of their choice. Do not run webhook checks that use secrets on changes you do not trust (for example on pull requests from forks).
+
 #### Expected Response
 
 The webhook should return JSON:

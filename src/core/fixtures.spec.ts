@@ -181,6 +181,18 @@ const COVERAGE_INVALID_ERRORS: ErrorTuple[] = [
     "Cycle detected in $ref: 1.0.0 -> 1.1.0",
   ],
 
+  // A dict override must narrow the base enum or dict
+  [
+    "auth/1/false/payload_dict_override_not_subset.yaml",
+    "payload.web.schema.sign_in_method.dict",
+    "Dictionary 'data/application_id' has values [web-app, mobile-app, admin-panel] that are not in base enum [email, google]",
+  ],
+  [
+    "auth/1/false/payload_dict_override_not_subset.yaml",
+    "payload.web.schema.owner_team.dict",
+    "Dictionary 'data/application_id' has values [web-app, mobile-app, admin-panel] that are not in dictionary 'governance/pii-owners'",
+  ],
+
   // Payload fields
   [
     "auth/1/false/payload_missing_required.yaml",
@@ -242,9 +254,42 @@ describe("fixtures", () => {
       externalRules: [path.join(fixtureRoot("coverage-invalid"), "external-rules")],
     });
 
-    // 22 matching event files; yaml_syntax_error, missing_event and missing_taxonomy do not load
-    expect(result.eventCount).toBe(19);
+    // 23 matching event files; yaml_syntax_error, missing_event and missing_taxonomy do not load
+    expect(result.eventCount).toBe(20);
     expect(toSortedTuples(result.errors)).toEqual(toSortedTuples(COVERAGE_INVALID_ERRORS));
+  });
+});
+
+describe("dict overrides", () => {
+  it("a base enum that is not a list does not crash the dict override check", async () => {
+    // onboarding_step_complete overrides auth_method with dict data/social_auth_methods
+    const result = await runFixture("coverage-valid", {
+      mutateConfig: (config) => {
+        (config.spec.events.payload.schema.auth_method as { enum: unknown }).enum = "google";
+      },
+    });
+    expect(result.eventCount).toBe(4);
+    expect(result.errors.filter((error) => error.path.endsWith("auth_method.dict"))).toEqual([]);
+  });
+
+  it("a dict override that leaves the base enum is reported", async () => {
+    const result = await runFixture("coverage-valid", {
+      mutateConfig: (config) => {
+        config.spec.events.payload.schema.auth_method.enum = ["email", "google"];
+      },
+    });
+    // Reported for every target and version that carries the override (1.1.0 inherits it via $ref)
+    const dictErrors = result.errors.filter((error) => error.path.endsWith(".auth_method.dict"));
+    expect(dictErrors.map((error) => error.path).sort()).toEqual([
+      "payload.ios.ios-1.schema.auth_method.dict",
+      "payload.web.1.0.0.schema.auth_method.dict",
+      "payload.web.1.1.0.schema.auth_method.dict",
+    ]);
+    for (const error of dictErrors) {
+      expect(error.message).toBe(
+        "Dictionary 'data/social_auth_methods' has values [github] that are not in base enum [email, google]",
+      );
+    }
   });
 });
 

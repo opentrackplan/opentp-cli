@@ -118,7 +118,7 @@ Errors are grouped by file: event files are shown relative to the events root, d
 
 [auth/login_click.yaml]
   ✗ event.key: Key does not match pattern "^[a-z0-9_]+::[a-z0-9_]+$"
-✗ ✗ Validation failed errorCount=3 eventCount=1
+✗ Validation failed errorCount=3 eventCount=1
 ```
 
 With `--json`, the same errors are printed to stdout as `{ "success": false, "events": <loaded event count>, "errors": [{ "event", "path", "message", "severity" }] }`; the `path` of a file-level problem is an empty string. No summary line is printed. When `validate` exits with code `2`, stdout is empty.

@@ -119,6 +119,15 @@ spec:
         user_id:
           type: string
           required: false
+        # A dict override must narrow these (see payload_dict_override_not_subset.yaml)
+        sign_in_method:
+          type: string
+          enum: [email, google]
+          required: false
+        owner_team:
+          type: string
+          dict: governance/pii-owners
+          required: false
 
     pii:
       kind:

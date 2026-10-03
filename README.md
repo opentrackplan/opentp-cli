@@ -327,6 +327,8 @@ taxonomy:
           retries: 2
 ```
 
+Allow the variables a webhook may read with `OPENTP_WEBHOOK_ENV` in the environment of the run (e.g. `OPENTP_WEBHOOK_ENV=API_KEY opentp validate` in CI); without it, opentp reads any variable and warns. It limits which variables are read, not where they are sent: whoever can change the plan (`opentp.yaml` or an event file) can point a check at another URL, so do not run webhook checks that use secrets on untrusted changes. See [docs/rules.md](docs/rules.md).
+
 ## Extensibility
 
 ### Custom Rules

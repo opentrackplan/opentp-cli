@@ -197,9 +197,8 @@ $installPath = Join-Path $installDir "opentp.exe"
 $url = "${ReleaseUrl}/opentp.exe"
 $sumsUrl = "${ReleaseUrl}/SHA256SUMS"
 
-$null = New-Item -ItemType Directory -Force $installDir
-
-$tempDir = if ($env:TEMP) { $env:TEMP } else { $opentpRoot }
+# The system temp directory always exists (TMP, TEMP, USERPROFILE, ... on Windows; TMPDIR or /tmp elsewhere)
+$tempDir = [System.IO.Path]::GetTempPath()
 $tmpId = [Guid]::NewGuid().ToString("N")
 $tmp = Join-Path $tempDir ("opentp.{0}.tmp" -f $tmpId)
 $sumsTmp = Join-Path $tempDir ("opentp-sums.{0}.tmp" -f $tmpId)
@@ -216,7 +215,7 @@ try {
   if ($sumsStatus -eq 200) {
     $expected = Get-ExpectedHash -SumsFile $sumsTmp -Name "opentp.exe"
     if (-not $expected) {
-      Fail "SHA256SUMS has no entry for opentp.exe ($sumsUrl)."
+      Fail "SHA256SUMS has no entry for opentp.exe ($sumsUrl). Nothing was installed."
     }
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmp).Hash.ToLowerInvariant()
     if ($actual -ne $expected) {
@@ -230,9 +229,11 @@ try {
       Fail "$sumsUrl is missing (HTTP $sumsStatus), although every release after 0.7.4 publishes it. The release may still be uploading its assets, or the mirror is incomplete. Nothing was installed."
     }
   } else {
-    Fail "could not download $sumsUrl (HTTP $sumsStatus)."
+    Fail "could not download $sumsUrl (HTTP $sumsStatus). Nothing was installed."
   }
 
+  # Only now that the binary is verified: an aborted install leaves no empty directory behind
+  $null = New-Item -ItemType Directory -Force $installDir
   Move-Item $tmp $installPath -Force
 } finally {
   Remove-Item -Force $tmp -ErrorAction SilentlyContinue

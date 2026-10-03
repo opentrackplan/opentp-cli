@@ -119,6 +119,6 @@ A typical session to add an event: `describe_plan` → `search_events` (does it 
 - Each call checks whether any file of the plan changed (modification time and size of `opentp.yaml` and of every file under the events and dictionaries roots) and reloads the plan if so. An agent that edits an event file sees the change in its next call. If the plan becomes unloadable while the server runs, every tool returns that error until it is fixed.
 - `generate` refuses a plan that cannot be loaded completely, like `opentp generate`.
 - If `spec.paths.events.template` in `opentp.yaml` is unusable, `suggest_event` and `validate_event_draft` say so instead of guessing a path, and `describe_plan` lists the problems.
-- Validation runs the plan's checks, including `webhook` checks configured in `opentp.yaml` (those tools are marked as reaching outside the server). A draft's own `webhook` checks are never run.
+- Validation runs the plan's checks, including `webhook` checks from `opentp.yaml` and from the event files on disk (those tools are marked as reaching outside the server). A draft's own `webhook` checks are never run. Mind what an agent writes to event files: a webhook check there runs on the next `validate_plan`.
 - stdout carries only the MCP protocol. Logs, and anything an external plugin prints, go to stderr.
 - The server exits with code `0` when the client closes stdin.

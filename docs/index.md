@@ -69,6 +69,7 @@ Logs (the `✓ All events are valid` and `✗ Validation failed` summaries, `--v
 |----------|-------------|
 | `OPENTP_ROOT` | Default for `--root` |
 | `OPENTP_LOG_LEVEL` | `trace`, `debug`, `info` (default), `warn`, `error` or `fatal`. Any other value is a usage error (exit code `2`) |
+| `OPENTP_WEBHOOK_ENV` | Environment variables that `webhook` checks may use in `${VAR}` (comma-separated; empty or `,` allows none). Unset: all, with a warning |
 
 ## Exit Codes
 

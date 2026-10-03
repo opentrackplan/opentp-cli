@@ -1,0 +1,24 @@
+opentp: 2026-01
+
+event:
+  key: auth::payload_dict_override_not_subset::p1::internal-false
+
+  taxonomy:
+    action: A dict override with values outside the base enum or dict
+    action_detail: "test::payload"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: payload_dict_override_not_subset
+        event_category:
+          value: auth
+        # data/application_id holds web-app, mobile-app, admin-panel: none is in the base enum
+        sign_in_method:
+          dict: data/application_id
+        # data/application_id is not a subset of governance/pii-owners
+        owner_team:
+          dict: data/application_id

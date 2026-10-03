@@ -62,7 +62,7 @@ Without `--output`, the generator output is written to stdout byte for byte: `op
 ```
 [auth/logout_click.yaml]
   ✗ Invalid YAML at line 6, column 13: Nested mappings are not allowed in compact mappings
-✗ ✗ Generation aborted: the tracking plan could not be loaded (run 'opentp validate') errorCount=1 eventCount=1
+✗ Generation aborted: the tracking plan could not be loaded (run 'opentp validate') errorCount=1 eventCount=1
 ```
 
 ## Examples

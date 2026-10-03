@@ -28,6 +28,9 @@ event:
           step_index:
             type: number
             required: true
+          # A dict override that narrows the base enum [email, google, github]
+          auth_method:
+            dict: data/social_auth_methods
       "1.1.0":
         $ref: "1.0.0"
         meta:
