@@ -22,6 +22,8 @@ import {
 } from "./core/validator";
 import type { GeneratorOptions } from "./generators";
 import { getGenerator, getGeneratorNames, loadExternalGenerators } from "./generators";
+import { PlanStore } from "./mcp/plan";
+import { reserveStdoutForProtocol, serveMcpStdio } from "./mcp/server";
 import { SPEC_SCHEMAS_URL, SPEC_VERSION, VERSION } from "./meta";
 import { loadExternalTransforms } from "./transforms";
 import type { EventFile, OpenTPConfig } from "./types";
@@ -37,7 +39,7 @@ export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
 export const EXIT_USAGE = 2;
 
-const COMMANDS = ["validate", "fix", "generate", "help", "version"] as const;
+const COMMANDS = ["validate", "fix", "generate", "mcp", "help", "version"] as const;
 type Command = (typeof COMMANDS)[number];
 
 export interface CliOptions {
@@ -79,7 +81,7 @@ type OptionName = keyof typeof OPTIONS;
 const GLOBAL_OPTIONS: readonly OptionName[] = ["root", "verbose", "help", "version"];
 
 /** Command-specific options; any other option is a usage error for that command */
-const COMMAND_OPTIONS: Record<"validate" | "fix" | "generate", readonly OptionName[]> = {
+const COMMAND_OPTIONS: Record<"validate" | "fix" | "generate" | "mcp", readonly OptionName[]> = {
   validate: ["fix", "json", "external-rules", "external-transforms"],
   fix: ["fix", "json", "external-rules", "external-transforms"],
   generate: [
@@ -91,6 +93,7 @@ const COMMAND_OPTIONS: Record<"validate" | "fix" | "generate", readonly OptionNa
     // Keygen pipelines are checked when the plan is loaded, so custom steps must be loadable here
     "external-transforms",
   ],
+  mcp: ["external-rules", "external-transforms"],
 };
 
 function tokenize(args: string[]) {
@@ -157,7 +160,7 @@ export function parseCliArgs(args: string[], env: NodeJS.ProcessEnv = process.en
     return options;
   }
 
-  const command = options.command as "validate" | "fix" | "generate";
+  const command = options.command as "validate" | "fix" | "generate" | "mcp";
   const accepted = new Set<string>([...GLOBAL_OPTIONS, ...COMMAND_OPTIONS[command]]);
 
   // Tokens keep the command-line order, so the last of --pretty / --no-pretty wins
@@ -229,7 +232,7 @@ export function parseCliArgs(args: string[], env: NodeJS.ProcessEnv = process.en
   return options;
 }
 
-const USAGE = "Usage: opentp [validate | fix | generate <name> | help | version] [options]";
+const USAGE = "Usage: opentp [validate | fix | generate <name> | mcp | help | version] [options]";
 
 function printUsageError(message: string): void {
   console.error(`✗ ${message}`);
@@ -247,6 +250,7 @@ Commands:
   validate               Validate the tracking plan (default)
   fix                    Rewrite event keys from spec.events.x-opentp.keygen, then validate
   generate <name>        Export the tracking plan with a generator (no validation)
+  mcp                    Serve the tracking plan to AI agents over MCP (stdio, read-only tools)
   help                   Show this help message
   version                Show version
 
@@ -274,8 +278,13 @@ Options (generate):
   --external-generators <dir>      Load custom generators from <dir> (repeatable)
   --external-transforms <dir>      Load custom transform steps used by keygen (repeatable)
 
+Options (mcp):
+  --external-rules <dir>           Load custom checks used by the validation tools (repeatable)
+  --external-transforms <dir>      Load custom transform steps used by keygen (repeatable)
+
 Plugin directories are resolved against the current directory. Logs go to stderr; stdout carries
-only the command output (the validation report, the --json document, generator output).
+only the command output (the validation report, the --json document, generator output, or the MCP
+protocol for 'mcp').
 
 Environment:
   OPENTP_ROOT            Default for --root
@@ -295,6 +304,7 @@ Examples:
   opentp generate json --output ./events.json
   opentp generate yaml -o ./events.yaml
   opentp generate template --file ./template.hbs -o ./EVENTS.md
+  opentp mcp --root ./my-plan
 `);
 }
 
@@ -571,6 +581,45 @@ async function runGenerate(options: CliOptions): Promise<number> {
 }
 
 /**
+ * Serves the plan over MCP on stdin/stdout until the client closes stdin. The plan must load at
+ * start (exit 2 otherwise, like the other commands); later changes are picked up per request, and a
+ * plan that becomes unloadable is reported by every tool instead of stopping the server.
+ */
+async function runMcp(options: CliOptions): Promise<number> {
+  const { verbose, externalRules, externalTransforms } = options;
+  const root = path.resolve(options.root);
+
+  if (verbose) {
+    setLogLevel("debug");
+  }
+
+  const config = loadProjectConfig(root);
+  if (typeof config === "number") {
+    return config;
+  }
+
+  // From here on stdout belongs to the protocol: plugins are imported and the plan is loaded next,
+  // and anything they print must not reach it
+  reserveStdoutForProtocol();
+
+  if (!(await loadTransformPlugins(externalTransforms))) {
+    return EXIT_USAGE;
+  }
+
+  const store = new PlanStore(root, { externalRules });
+  try {
+    const plan = await store.current();
+    logger.debug({ events: plan.events.length }, "Plan loaded");
+  } catch (error) {
+    logger.error(error instanceof Error ? error.message : String(error));
+    return EXIT_USAGE;
+  }
+
+  await serveMcpStdio(store);
+  return EXIT_OK;
+}
+
+/**
  * Checks that every --external-* directory exists (resolved against the current directory).
  * @throws UsageError for a missing directory
  */
@@ -626,6 +675,9 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
 
     case "generate":
       return runGenerate(options);
+
+    case "mcp":
+      return runMcp(options);
   }
 }
 

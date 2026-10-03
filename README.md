@@ -196,6 +196,7 @@ Validation fails closed (exit code `1`): event or dictionary files that cannot b
 | `opentp fix` | Auto-fix `event.key` (requires `spec.events.x-opentp.keygen`) |
 | `opentp generate json` | Export as JSON                                      |
 | `opentp generate yaml` | Export as YAML                                      |
+| `opentp mcp` | Serve the plan to AI agents over MCP (stdio, read-only tools) |
 | `opentp --help` | Show help                                           |
 | `opentp --version` | Show version                                        |
 
@@ -218,6 +219,20 @@ Logs go to stderr; stdout carries only the report, the `--json` document or the 
 | `0` | Success |
 | `1` | Validation errors, a plan that cannot be loaded completely, or a failed generator |
 | `2` | Usage or configuration error: unknown command or option, invalid `OPENTP_LOG_LEVEL`, missing plugin directory, unknown generator, `opentp.yaml` missing or invalid |
+
+### AI agents (MCP)
+
+`opentp mcp` lets an AI agent (Claude Code, Codex, Cursor, VS Code, Claude Desktop, ...) search the plan, read an event's effective payload per target, and validate a draft before writing it. All tools are read-only; the agent writes event files itself. Commit `.mcp.json` to the plan repository:
+
+```json
+{
+  "mcpServers": {
+    "opentp": { "command": "opentp", "args": ["mcp"] }
+  }
+}
+```
+
+Tools: `describe_plan`, `search_events`, `get_event`, `list_dictionaries`, `get_dictionary`, `validate_event_draft`, `validate_plan`, `suggest_event`, `generate`. Configuration for other clients and details: [docs/mcp.md](docs/mcp.md).
 
 ## Key Concepts
 

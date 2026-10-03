@@ -10,6 +10,20 @@ Releases up to 0.7.4 are described only in their
 
 ## [Unreleased]
 
+### Added
+
+- **`opentp mcp`:** serves the tracking plan to AI agents over the Model Context Protocol (stdio).
+  Read-only tools: `describe_plan`, `search_events` (BM25 over character trigrams, language-agnostic,
+  no model needed), `get_event` (the effective payload per target and version, common fields merged
+  in), `list_dictionaries`, `get_dictionary`, `validate_event_draft` (validates YAML as if saved at a
+  path, without writing it; `webhook` checks defined in the draft are not run), `validate_plan`
+  (optionally per file, with whether opentp loads each file at all), `suggest_event` (file path,
+  generated key and a YAML skeleton for taxonomy values) and `generate` (json/yaml). One response is
+  at most 256 KB. The plan is reloaded when its files change, so an agent's edits show up in its next
+  call. Nothing is written to disk, and stdout carries only the protocol (plugin output goes to
+  stderr). See `docs/mcp.md` for the client configuration (`.mcp.json`, Cursor, Codex, VS Code,
+  Claude Desktop).
+
 ## [0.8.0] - 2026-10-02
 
 Supported spec version: `2026-01` (unchanged).

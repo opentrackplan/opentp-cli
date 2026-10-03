@@ -32,6 +32,7 @@ Arguments are checked strictly: an unknown command, an unknown option, an option
 | [`validate`](/cli/validate) | Validate all events |
 | [`fix`](/cli/fix) | Auto-fix `event.key` (requires `spec.events.x-opentp.keygen`) |
 | [`generate`](/cli/generate) | Export tracking plan to various formats |
+| [`mcp`](/cli/mcp) | Serve the tracking plan to AI agents over MCP (stdio, read-only tools) |
 
 ## Quick Examples
 
@@ -51,13 +52,16 @@ opentp generate json
 # Export to YAML
 opentp generate yaml
 
+# Serve the plan to an AI agent (normally started by the agent)
+opentp mcp
+
 # Show version
 opentp --version
 ```
 
 ## Output
 
-Logs (the `✓ All events are valid` and `✗ Validation failed` summaries, `--verbose` debug lines, warnings and errors) go to **stderr**. **stdout** carries only the command output: the validation report, the `--json` document, or the generator output. So `opentp validate --json > report.json` and `opentp generate json | jq` always get clean, complete output, also with `--verbose`.
+Logs (the `✓ All events are valid` and `✗ Validation failed` summaries, `--verbose` debug lines, warnings and errors) go to **stderr**. **stdout** carries only the command output: the validation report, the `--json` document, the generator output, or the MCP protocol (`opentp mcp`). So `opentp validate --json > report.json` and `opentp generate json | jq` always get clean, complete output, also with `--verbose`.
 
 ## Environment Variables
 

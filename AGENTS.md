@@ -51,8 +51,8 @@ and exports the plan through generators.
 | Language | TypeScript (strict). Source is ESM (`"type": "module"`) |
 | Node bundle | esbuild `src/index.ts` -> `dist/index.cjs` (CJS, target node18, `#!/usr/bin/env node`). Used for development, CI smoke tests and `npm link`; never published. `main` and `bin.opentp` both point to it (`files` is kept, but `private: true` blocks `npm publish`). No `exports`, no `types`, no `.d.ts`. The esbuild target only sets the syntax level; it is deliberately left below `engines` |
 | Binaries | `bun build src/cli.ts --compile` (the entry is `cli.ts`, not `index.ts`). The only distributed artifact |
-| Runtime deps | `yaml` ^2.8.1 only (bundled) |
-| Dev tooling | vitest 4.0.16, Biome 2.3.11, esbuild 0.25.x, TypeScript 5.9.x, `bun` ^1.3.5 as an npm devDependency |
+| Runtime deps | `yaml` ^2.8.1, `@modelcontextprotocol/server` ^2.3.0 (MCP SDK v2) and `zod` ^4 (its schema library, also imported directly); all bundled |
+| Dev tooling | vitest 4.0.16, Biome 2.3.11, esbuild 0.25.x, TypeScript 5.9.x, `bun` ^1.3.5 as an npm devDependency, `@modelcontextprotocol/client` (MCP tests only) |
 | Node | `engines`: `^20.19.0 \|\| >=22.12.0` (what vite 7 / vitest 4 need; Node 18 is EOL). It describes only the development toolchain (build from source, tests); users run the binaries, which embed the Bun runtime and need no Node.js. Documented in README and getting-started ("From source") and CONTRIBUTING. The bundle's node18 syntax target does not make older runtimes supported, they are not tested. CI tests Node 20 and 22. Verified on 22.15 |
 | TypeScript configs | `tsconfig.json`: `src/` without specs (`resolveJsonModule` for `src/meta.ts`). `tsconfig.test.json` extends it and adds `*.spec.ts`. Both must have 0 errors |
 | CI (`ci.yml`) | Push/PR to main, Node 20 + 22 matrix; also called by `release.yml` (`workflow_call`). `npm ci`, lint, `tsc` (both configs), test, build, smoke tests (fixtures + opentp-spec `examples/{simple,full}` at the tag that equals `specVersion`) |
@@ -64,13 +64,13 @@ Run everything from `opentp-cli/`. All results below were verified on 2026-10-02
 
 ```bash
 npm ci                          # install (same as CI)
-npm test                        # vitest run -> 30 files / 272 tests pass
+npm test                        # vitest run -> 33 files / 322 tests pass
 npx vitest run src/core/fixtures.spec.ts                 # integration fixtures only (6 tests)
 npx vitest run src/cli.spec.ts                           # argv parsing, exit codes, stdout/stderr split, generate/fix refusals (in-process main)
 npx vitest run src/external-plugins.spec.ts              # loadExternal{Rules,Transforms,Generators} with temp dirs
 npx vitest run src/core                                  # fixtures + config/event loader unit tests
 npx vitest run src/rules src/transforms src/generators   # plugin unit tests only
-npm run lint                    # biome check src/ -> "Checked 78 files ... No fixes applied."
+npm run lint                    # biome check src/ -> "Checked 85 files ... No fixes applied."
 npm run lint:fix                # biome check --write src/ (also sorts imports)
 npm run format                  # biome format --write src/
 npm run typecheck               # tsc --noEmit -p . && tsc --noEmit -p tsconfig.test.json -> 0 errors (CI runs both)
@@ -80,9 +80,10 @@ npm run compile                 # all four into releases/ (gitignored, local onl
 ```
 
 Smoke tests. After the build, CI runs the first four (the first three on the combined stdout +
-stderr), plus a `--json -v` parse and a `cmp` of piped vs `-o` `generate json` output, both on
-`coverage-valid`. `release.yml` runs a similar set against every compiled binary (see Release
-process). `dist/` is not committed and can be stale, so run `npm run build` first:
+stderr), plus a `--json -v` parse, a `cmp` of piped vs `-o` `generate json` output, and the MCP smoke
+script, all on `coverage-valid`. `release.yml` runs a similar set (MCP smoke included) against every
+compiled binary (see Release process). `dist/` is not committed and can be stale, so run
+`npm run build` first:
 
 ```bash
 node dist/index.cjs --version   # "opentp v<package.json version> (spec 2026-01)" + "Schemas: https://opentp.dev/schemas/2026-01"
@@ -94,6 +95,10 @@ node dist/index.cjs validate --json -v --root tests/data/coverage-invalid 2>/dev
 node dist/index.cjs validate --root tests/data/coverage-invalid --external-rules tests/data/coverage-invalid/external-rules
 node dist/index.cjs generate json --root tests/data/coverage-invalid   # refuses: load errors on stderr, empty stdout, exit 1
 node dist/index.cjs generate json --root tests/data/coverage-valid
+# opentp mcp over stdio: raw JSON-RPC (no dependencies), 9 tools, 3 calls, exit 0 on stdin EOF; the
+# noisy plugins print to stdout at import, and the smoke fails on any non-JSON-RPC stdout line
+node tests/mcp-smoke.mjs node dist/index.cjs mcp --root tests/data/coverage-valid \
+  --external-transforms tests/data/mcp-noisy-plugins/transforms --external-rules tests/data/mcp-noisy-plugins/rules
 ./releases/opentp-mac validate --root tests/data/coverage-valid   # after compile:mac
 ```
 
@@ -124,7 +129,7 @@ src/
                      SPEC_SCHEMAS_URL, createTransform(s), getStep, getStepNames, transform types
   cli.ts             Whole CLI: EXIT_OK/EXIT_FAILURE/EXIT_USAGE, CliOptions, UsageError, OPTIONS +
                      COMMAND_OPTIONS, parseCliArgs (node:util parseArgs), printHelp, printVersion,
-                     runValidate (also fix), runGenerate, main (returns the exit code), bootstrap guard
+                     runValidate (also fix), runGenerate, runMcp, main (returns the exit code), bootstrap guard
                      (`require.main === module`; sets process.exitCode, EPIPE handler). Bun binaries
                      compile THIS file
   cli.spec.ts        parseCliArgs cases and in-process main() runs (exit codes, stdout vs stderr, --json,
@@ -136,9 +141,13 @@ src/
     config.ts        findConfigFile, loadConfig (throws), validateConfig -> ConfigIssue[] (never throws),
                      getKeygenProblems, resolvePath, getEventsPath, getDictsPath, getEventsTemplate
     dict.ts          loadDictionaries -> { dictionaries: Map, issues: DictionaryIssue[] }, getDictValues
-    event.ts         loadEvents -> { events, issues: EventLoadIssue[] } (+ private prepareKeygen,
-                     extractTaxonomy, extractFragments, generateEventKey, parseTypedValue)
-    payload.ts       resolveEventPayload, mergeSchemaMaps, mergeField, UNVERSIONED_VERSION_KEY ("__unversioned__")
+    event.ts         loadEvents -> { events, issues: EventLoadIssue[] }; createEventLoadContext +
+                     loadEventDocument (one parsed document as if it were a file at a path: used by
+                     loadEvents and by the MCP draft tools) (+ private prepareKeygen, extractTaxonomy,
+                     extractFragments, generateEventKey, parseTypedValue)
+    payload.ts       resolveEventPayload, resolveEffectivePayload (base -> spec.targets -> event schema per
+                     target and version, the merge order of validatePayload), mergeSchemaMaps, mergeField,
+                     UNVERSIONED_VERSION_KEY ("__unversioned__")
     validator.ts     configIssuesToErrors, loadIssuesToErrors, buildIgnoreSet, validateEvents (+ private
                      validateTaxonomyDictionaries), validateEvent, validateTaxonomy, validatePayload (with
                      nested validateEffectiveValue, validatePii), groupErrorsByEvent, formatErrors (~1550 lines)
@@ -165,11 +174,16 @@ src/
                      (validateFieldExclusivity), index.ts, index.spec.ts; 8 folders (index.ts + rule.spec.ts):
                      contains ends-with max-length min-length not-empty pattern starts-with webhook
   generators/        types.ts, registry.ts, index.ts, json/ yaml/ template/ (index.ts + generator.spec.ts)
+  mcp/               `opentp mcp` (see "MCP server"): plan.ts (PlanStore, PlanSnapshot, PlanError),
+                     search.ts (TrigramIndex, eventDocument), tools.ts (the 9 tools as plain functions,
+                     ToolError), server.ts (buildMcpServer, serveMcpStdio) + search/tools/server specs
+tests/mcp-smoke.mjs  dependency-free stdio smoke test for `opentp mcp` (CI and the release binary smoke)
+tests/data/mcp-noisy-plugins/  a transform and a check that print to stdout at import (MCP smoke only)
 tests/data/coverage-valid/    fixture plan that must produce zero errors (4 events)
 tests/data/coverage-invalid/  fixture plan with intentional errors (22 matching event files, 19 load;
                               external-rules/throwing-check is an ESM check that throws)
 docs/*.md            Starlight pages synced to opentp.dev: index, getting-started, validate, fix,
-                     generate, transforms, rules
+                     generate, mcp, transforms, rules
 esbuild/esbuild.js   bundle script (cwd-relative paths, not linted)
 install/install.sh, install/install.ps1    one-line installers (latest GitHub release by default,
                      OPENTP_VERSION pin, OPENTP_DOWNLOAD_BASE mirror, SHA256SUMS verification)
@@ -267,7 +281,7 @@ Payload resolution (`src/core/payload.ts`; normative semantics: `opentp-spec/doc
 
 ## CLI reference
 
-Usage: `opentp [validate | fix | generate <name> | help | version] [options]`. Arguments are parsed by
+Usage: `opentp [validate | fix | generate <name> | mcp | help | version] [options]`. Arguments are parsed by
 `parseCliArgs` (`node:util` `parseArgs` with `strict: true`, `allowPositionals`, `tokens`; Node and Bun
 behave the same). The first positional is the command (default `validate`); options may appear
 anywhere. Anything unexpected is a `UsageError`: `✗ <message>` plus a two-line usage on stderr, exit 2.
@@ -277,6 +291,7 @@ anywhere. Anything unexpected is a `UsageError`: `✗ <message>` plus a two-line
 | `validate` (default) | Pipeline above |
 | `fix` (or `validate --fix`/`-f`) | Needs `spec.events.x-opentp.keygen` (else exit 2). Rewrites keys (none while `validateConfig` reports anything), then validates; the exit code comes from validation |
 | `generate <name>` | `<name>` is the second positional, wherever it appears (`generate -o x.json json` works); missing name or extra positionals exit 2. Built-ins: `json`, `yaml`, `template`; an unknown name exits 2. Does **not** validate events or load rules, but **refuses (exit 1)** when the plan cannot be loaded completely: any `validateConfig` issue (including unknown keygen steps, hence `--external-transforms` is accepted here), any dictionary issue, or any event load issue. The problems go to stderr (`formatErrors` via `console.error`), stdout stays empty, nothing is written. Generator `stdout` is written verbatim (`process.stdout.write`, no added newline), so piped output equals the `-o` file; json and yaml output end with a newline |
+| `mcp` | Serves the plan over MCP on stdin/stdout until stdin closes (exit 0). The plan must load at start: `opentp.yaml` missing or invalid exits 2 before serving. Accepts `--external-rules` and `--external-transforms`. See "MCP server" |
 | `help`, `--help`, `-h` | Prints help on stdout, exit 0. The `help` command takes no arguments (`help validate` exits 2). `-h`/`--help` win over the command, its options and its arguments (checked after unknown commands and options) |
 | `version`, `--version`, `-V` | Prints version and schemas URL on stdout, exit 0. The `version` command takes no arguments; `-V`/`--version` win like `--help`. `-v` is verbose, not version |
 
@@ -289,8 +304,8 @@ anywhere. Anything unexpected is a `UsageError`: `✗ <message>` plus a two-line
 | `--verbose`, `-v` | all | Debug logs (stderr) |
 | `--json` | validate, fix | Prints `{ "success": bool, "events": <loaded count>, "errors": ValidationError[] }` to stdout and nothing else (also with `-v` and `fix`). No document on exit 2 |
 | `--fix`, `-f` | validate, fix | Same as the `fix` command |
-| `--external-rules <dir>` | validate, fix | Repeatable; loaded inside `validateEvents` |
-| `--external-transforms <dir>` | validate, fix, generate | Repeatable; loaded before the plan |
+| `--external-rules <dir>` | validate, fix, mcp | Repeatable; loaded inside `validateEvents` |
+| `--external-transforms <dir>` | validate, fix, generate, mcp | Repeatable; loaded before the plan |
 | `--external-generators <dir>` | generate | Repeatable |
 | `--output <p>`, `-o <p>` | generate | Generator output file, resolved **relative to `--root`**. Default: stdout |
 | `--file <p>` | generate | Template generator input, resolved **relative to cwd** |
@@ -342,6 +357,74 @@ anywhere. Anything unexpected is a `UsageError`: `✗ <message>` plus a two-line
   stdout. Every logger line (info/debug/warn/error, including the `fix` and `Generated file=...` lines)
   goes to stderr; stdout carries only the report, the `--json` document, help/version, or generator
   output.
+
+## MCP server (`opentp mcp`)
+
+stdio only for now; an HTTP mode (`opentp serve` with `/mcp` and a web UI) is the
+planned next step ("phase 2" below).
+
+- **SDK:** `@modelcontextprotocol/server` v2 (`McpServer`, `ResourceTemplate`, `serveStdio` from the
+  `/stdio` subpath, found through the package's `typesVersions` under `moduleResolution: node`). It
+  serves MCP revision 2026-07-28 and 2025-era clients (`initialize` handshake) on the same connection
+  type. Tool input schemas are `zod/v4` objects. Bundled by esbuild (its CJS build) and by
+  `bun --compile` (verified with Bun 1.3.5 and 1.3.6; the binary grew by about 0.8 MB).
+- **Read-only by design:** no tool writes a file (owner decision 2026-10-03). Agents write event files
+  themselves; `suggest_event` and `validate_event_draft` tell them where and whether it is right. Every
+  tool has `readOnlyHint: true`. Do not add write tools without the owner (planned only behind an
+  opt-in `mcp.write` in `opentp.cli.yaml`).
+- **PlanStore** (`plan.ts`): loads the plan like `runValidate` (config, dictionaries, events) into a
+  `PlanSnapshot`. Each `current()` call compares mtime and size of `opentp.yaml` and of every file
+  under the events and dictionaries roots with the last load and reloads the whole plan on any change.
+  The snapshot caches the search index and the full validation result.
+  Events are sorted by relative path; `byKey` keeps the first event for a duplicate key.
+  `PlanError` (opentp.yaml missing or not loadable) becomes an error result of every tool; `runMcp`
+  checks the plan once before serving and exits 2 instead.
+- **Tools** (`tools.ts`) are plain functions over a snapshot, unit-tested without MCP. `ToolError` (an
+  unknown key, target, version or dictionary, an absolute path or one with `..`, an unusable path
+  template) becomes an error result; any other exception is logged and returned as
+  `Internal error: ...`. Draft tools load YAML text through `loadEventDocument` with a context from
+  `createEventLoadContext`, then run `validateEvents([draft])` and add a duplicate-key check against
+  the plan (validateEvents only sees the list it gets). `generate` refuses an incompletely loaded plan
+  (like the CLI).
+  - **Drafts never trigger requests:** `validate_event_draft` deletes every `checks.webhook` that the
+    draft YAML defines before validating (`removeDraftWebhooks`), so a prompt-injected draft cannot
+    send `${ENV}` values to its own URL. Webhook checks from `opentp.yaml` still run, so the
+    validating tools (`validate_event_draft`, `validate_plan`, `suggest_event`) have
+    `openWorldHint: true`.
+  - **Limits:** one response is at most `MAX_RESPONSE_BYTES` (256 KB of UTF-8 text), checked in
+    `run()` for every tool and in the resource handlers. `generate` sends the export once, as the
+    text; its structured content is metadata only.
+  - **Inputs read defensively:** `aliases` is not schema-checked, so alias lookups accept any shape;
+    versions and aliases are looked up with `Object.hasOwn` (no `toString`, no `__unversioned__`).
+  - `validate_plan` with `files` reports each file's status (`loaded`, `load-error`, `not-loaded` =
+    on disk but skipped by the path template or not YAML, `not-found`) and `filesValid`, because
+    `loadEvents` skips non-matching files silently. `suggest_event` refuses a path that the template
+    would read back with different values (placeholders sharing a segment).
+- **Search** (`search.ts`): BM25 (k1 1.2, b 0.75) over character trigrams of words (letters and
+  digits, Unicode), text normalized with NFKD + combining marks removed + lowercase; no stemming, no
+  locale (the CLI is language-agnostic). The event document is the key, taxonomy values and the
+  names/titles/descriptions/fixed values/enums (up to 10 values) of the payload fields the event
+  defines. The file path is deliberately left out: its values are already taxonomy values, and
+  repeating them only skews the ranking.
+- **stdout is the protocol.** `runMcp` calls `reserveStdoutForProtocol()` right after `opentp.yaml`
+  loads and before plugins are imported: every console method is rebound to a `Console` on stderr
+  (needed for Bun, whose console writes to fd 1 directly) and `process.stdout.write` goes to stderr;
+  the SDK's `StdioServerTransport` gets a private `Writable` over the real stdout. The redirect is
+  global and permanent for the process, so it runs only in `mcp` (not before the config check, which
+  `cli.spec.ts` exercises in-process). `tests/data/mcp-noisy-plugins` (a transform and a check that
+  print at import) are passed to the smoke test in CI and in the release binary smoke.
+- **Exit:** the server returns from `main` (exit 0) when stdin ends or closes.
+- **Tests:** `src/mcp/{search,tools,server}.spec.ts` (the server spec uses the SDK client over
+  `InMemoryTransport`), `cli.spec.ts` (argument cases, exit 2 without a plan), and `tests/mcp-smoke.mjs`
+  for the bundle (CI) and every binary (`release.yml`). The draft-webhook test runs a local HTTP
+  server and asserts zero requests (without the removal the check fires once per target).
+- **Before HTTP (`opentp serve`, phase 2), still open:** a draft's own `pattern` (or `checks.pattern`)
+  runs on the main thread, so a catastrophic-backtracking regex blocks every client (run draft
+  validation in a worker with a timeout, or skip draft-defined patterns); `scanDirectory` follows
+  symlinks, so a link under the events root can expose files outside the plan (resolve with
+  `realpathSync` and skip targets outside the roots); `opentp mcp` finds the plan only through
+  `--root`, `$OPENTP_ROOT` or the cwd, and clients do not all start servers in the project folder
+  (owner decision pending: MCP roots or an upward search).
 
 ## Plugin systems (transforms, rules, generators)
 
@@ -473,8 +556,7 @@ against check paths, plus these aliases:
    `src/transforms/index.spec.ts`. Imports must stay sorted (Biome `organizeImports`), or `npm run lint`
    fails; run `npm run lint:fix`, which also moves the `// Import built-in ...` comment (expected).
 4. Step names are also listed in the README "Transforms" table, the `docs/transforms.md` "Built-in
-   Steps" list and this file's layout block (in a local workspace also `../AGENTS.md`, "12 built-in
-   transforms"). Find them with
+   Steps" list and this file's layout block. Find them with
    `grep -rn to-camel-case . --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=releases`.
    The README rows for `collapse` (it removes every non-`[A-Za-z0-9]` char) and `to-underscore` (every
    non-alphanumeric run becomes `_`, no lowercasing) are wrong; fix them while there.
@@ -500,6 +582,15 @@ against check paths, plus these aliases:
    `parseCliArgs` that sets `generatorOptions` (no generic passthrough).
 5. Update `docs/generate.md` and the README "CLI Commands" table. For typed/SDK output, build on
    `resolveEventPayload`, not the raw `event.payload`.
+
+**Add an MCP tool**
+1. A plain function in `src/mcp/tools.ts` that takes a `PlanSnapshot` and returns a JSON-able object;
+   throw `ToolError` for a bad request. Keep it read-only (see "MCP server").
+2. Register it in `buildMcpServer` (`src/mcp/server.ts`) with a `zod/v4` input schema, a description an
+   agent can act on, and `annotations: READ_ONLY`.
+3. Tests in `src/mcp/tools.spec.ts` (and `server.spec.ts` if the wire format matters); add the name to
+   `TOOLS` in `server.spec.ts` and `EXPECTED_TOOLS` in `tests/mcp-smoke.mjs`.
+4. Document it in the tools table of `docs/mcp.md`, the README tool list and `CHANGELOG.md`.
 
 **Add a CLI flag:** `CliOptions` + an `OPTIONS` entry (`type`, optional `short`, `multiple`; `--flag v`
 and `--flag=v` come for free) + the commands that accept it in `COMMAND_OPTIONS` (or `GLOBAL_OPTIONS`) +
@@ -594,7 +685,7 @@ Pick the layer by where the problem lives, so that each problem is reported exac
    |---|---|
    | `check-version` | Fails unless the tag equals `v` + `package.json` `version` and `package-lock.json` has the same version |
    | `verify` | Calls `ci.yml` (`workflow_call`): the whole CI, both Node versions |
-   | `build` (needs both) | Per runner: `npm ci --omit=dev`, then `bun build src/cli.ts --compile --target=bun-<target>` with Bun 1.3.5, then "Smoke test the binary" (bash, also on Windows): `--version`; `coverage-valid` exit 0 + `count=4`; `coverage-invalid` exit 1 + `Validation failed`; `valdiate` exit 2; `--external-rules` loads `throwing-check`; piped `generate json` = `-o` file. A failure uploads nothing, so nothing is released |
+   | `build` (needs both) | Per runner: `npm ci --omit=dev`, then `bun build src/cli.ts --compile --target=bun-<target>` with Bun 1.3.5, then "Smoke test the binary" (bash, also on Windows): `--version`; `coverage-valid` exit 0 + `count=4`; `coverage-invalid` exit 1 + `Validation failed`; `valdiate` exit 2; `--external-rules` loads `throwing-check`; piped `generate json` = `-o` file; `tests/mcp-smoke.mjs` against `opentp mcp`. A failure uploads nothing, so nothing is released |
    | `release` | `sha256sum` of the four binaries -> `SHA256SUMS`; the `## [X.Y.Z]` section of `CHANGELOG.md` (a warning and only generated notes when it is missing) + generated notes; GitHub Release with the five files (`fail_on_unmatched_files`), `prerelease` when the tag contains `-` |
 
    | Runner | Bun target | Artifact (fixed name) |
@@ -653,7 +744,8 @@ Pick the layer by where the problem lives, so that each problem is reported exac
   redeploy. Edit docs **here**, never the website copy.
 - Every CLI doc needs Starlight frontmatter: `title` (required), `description`, `sidebar.order`. The sync
   script adds frontmatter only to spec docs. The website sidebar lists CLI slugs explicitly in
-  `opentp-website/astro.config.mjs`, so a new page needs an entry there.
+  `opentp-website/astro.config.mjs`, so a new page needs an entry there (`docs/mcp.md` needs
+  `{ label: 'mcp', slug: 'docs/cli/mcp' }` after `generate` when the release that ships it is synced).
 - **Cross-page links are fragile.** Root-absolute links are rewritten **one by one** by `perl` lines in
   `opentp-website/scripts/sync-docs*.sh` (for `index.md`, `getting-started.md` and `generate.md`). A new
   absolute link needs a matching rewrite there, and the rewritten target must also resolve on the built
@@ -690,8 +782,8 @@ Pick the layer by where the problem lives, so that each problem is reported exac
 
 - **Files that do not match the path template are skipped with no message** (for example a file one
   directory too deep, or `.yml` vs a `.yaml` template). Broken matching files are errors now, but a
-  misplaced file is invisible: check `count=`. The roadmap's optional `--strict` (report non-matching
-  files under the events root) is not implemented.
+  misplaced file is invisible: check `count=`. An optional `--strict` (report non-matching files
+  under the events root) is not implemented.
 - **A null payload field definition crashes the run.** An empty YAML key under a payload schema (base,
   `spec.targets.<t>.schema` or event) throws a TypeError during validation. The run ends with
   `✗✗ Fatal error`, exit 1, and no other event is reported, because `validateEvents` has no per-event

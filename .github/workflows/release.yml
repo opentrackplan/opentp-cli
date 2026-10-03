@@ -136,6 +136,12 @@ jobs:
             if (!fs.readFileSync(a).equals(fs.readFileSync(b))) { console.error(`::error::generate json: stdout differs from --output`); process.exit(1); }' \
             "$RUNNER_TEMP/stdout.json" "$RUNNER_TEMP/output.json"
 
+          # MCP over stdio (raw JSON-RPC, no dependencies): the tool list, three read-only tools, and a
+          # clean exit when stdin closes; plugins that print must not reach stdout (the protocol)
+          node tests/mcp-smoke.mjs "$BIN" mcp --root tests/data/coverage-valid \
+            --external-transforms tests/data/mcp-noisy-plugins/transforms \
+            --external-rules tests/data/mcp-noisy-plugins/rules
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

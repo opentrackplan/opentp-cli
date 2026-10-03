@@ -96,6 +96,21 @@ describe("parseCliArgs", () => {
     expect(pretty(["--pretty", "--no-pretty"])).toBe(false);
   });
 
+  it("parses mcp with its plugin options", () => {
+    expect(
+      parseCliArgs(
+        ["mcp", "-r", "./plan", "--external-rules", "r", "--external-transforms", "t"],
+        env,
+      ),
+    ).toMatchObject({
+      command: "mcp",
+      root: "./plan",
+      externalRules: ["r"],
+      externalTransforms: ["t"],
+    });
+    expect(parseCliArgs(["mcp", "--help"], env).command).toBe("help");
+  });
+
   it("maps help and version (commands and flags)", () => {
     expect(parseCliArgs(["help"], env).command).toBe("help");
     expect(parseCliArgs(["validate", "-h"], env).command).toBe("help");
@@ -133,6 +148,9 @@ describe("parseCliArgs", () => {
     [["validate", "extra"], "Unexpected argument 'extra'"],
     [["help", "validate"], "Unexpected argument 'validate'"],
     [["version", "foo"], "Unexpected argument 'foo'"],
+    [["mcp", "--json"], "Option '--json' cannot be used with 'mcp'"],
+    [["mcp", "-o", "x"], "Option '-o' cannot be used with 'mcp'"],
+    [["mcp", "stdio"], "Unexpected argument 'stdio'"],
   ])("rejects %j", (args, message) => {
     expect(() => parseCliArgs(args, env)).toThrow(UsageError);
     expect(() => parseCliArgs(args, env)).toThrow(message);
@@ -245,6 +263,12 @@ describe("main", () => {
     expect(await main(["--json", "--root", oldVersion])).toBe(EXIT_USAGE);
     expect(stdout).toEqual([]);
     expect(stderr[0]).toContain("Unsupported OpenTrackPlan schema version '2025-12'");
+  });
+
+  it("exits 2 for mcp when the plan cannot be loaded, before serving anything", async () => {
+    expect(await main(["mcp", "--root", tmpRoot])).toBe(EXIT_USAGE);
+    expect(stdout).toEqual([]);
+    expect(stderr[0]).toMatch(/^✗ opentp\.yaml not found root=/);
   });
 
   it("exits 2 for fix without keygen", async () => {

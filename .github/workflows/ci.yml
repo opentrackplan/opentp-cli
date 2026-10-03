@@ -96,6 +96,14 @@ jobs:
           node dist/index.cjs generate json --root tests/data/coverage-valid -o "$RUNNER_TEMP/output.json"
           cmp "$RUNNER_TEMP/stdout.json" "$RUNNER_TEMP/output.json"
 
+      # `opentp mcp` over stdio: raw JSON-RPC, the tool list, three read-only tools, a clean exit; the
+      # noisy plugins print to stdout, which must still carry only the protocol
+      - name: Smoke test (mcp)
+        run: >-
+          node tests/mcp-smoke.mjs node dist/index.cjs mcp --root tests/data/coverage-valid
+          --external-transforms tests/data/mcp-noisy-plugins/transforms
+          --external-rules tests/data/mcp-noisy-plugins/rules
+
       - name: Read supported spec version
         id: spec
         run: echo "version=$(node -p "require('./package.json').specVersion")" >> "$GITHUB_OUTPUT"
