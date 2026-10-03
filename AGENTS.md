@@ -424,7 +424,8 @@ planned next step ("phase 2" below).
   symlinks, so a link under the events root can expose files outside the plan (resolve with
   `realpathSync` and skip targets outside the roots); `opentp mcp` finds the plan only through
   `--root`, `$OPENTP_ROOT` or the cwd, and clients do not all start servers in the project folder
-  (owner decision pending: MCP roots or an upward search).
+  (owner decision 2026-10-03: keep this for now and check with real clients; MCP roots, where the
+  client tells the server its project folders, are the candidate if that is not enough).
 
 ## Plugin systems (transforms, rules, generators)
 
