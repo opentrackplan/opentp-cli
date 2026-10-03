@@ -10,6 +10,10 @@ Releases up to 0.7.4 are described only in their
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-03
+
+Supported spec version: `2026-01` (unchanged). No breaking changes.
+
 ### Added
 
 - **`opentp mcp`:** serves the tracking plan to AI agents over the Model Context Protocol (stdio).
@@ -18,11 +22,18 @@ Releases up to 0.7.4 are described only in their
   in), `list_dictionaries`, `get_dictionary`, `validate_event_draft` (validates YAML as if saved at a
   path, without writing it; `webhook` checks defined in the draft are not run), `validate_plan`
   (optionally per file, with whether opentp loads each file at all), `suggest_event` (file path,
-  generated key and a YAML skeleton for taxonomy values) and `generate` (json/yaml). One response is
-  at most 256 KB. The plan is reloaded when its files change, so an agent's edits show up in its next
+  generated key and a YAML skeleton for taxonomy values) and `generate` (json/yaml). Also two
+  resources (`opentp://plan/summary`, `opentp://events/{key}`) and the options `--root`,
+  `--external-rules` and `--external-transforms`; the command exits with code 2 if the plan cannot be
+  loaded at start. The text of one tool result is at most 256 KB. The plan is reloaded when its files change, so an agent's edits show up in its next
   call. Nothing is written to disk, and stdout carries only the protocol (plugin output goes to
   stderr). See `docs/mcp.md` for the client configuration (`.mcp.json`, Cursor, Codex, VS Code,
   Claude Desktop).
+
+### Fixed
+
+- **`yaml` 2.8.4:** the YAML parser is updated to fix a stack overflow on deeply nested collections
+  (GHSA-48c2-rrv3-qjmp), which matters now that `opentp mcp` parses YAML sent by agents.
 
 ## [0.8.0] - 2026-10-02
 

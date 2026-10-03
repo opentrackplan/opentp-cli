@@ -105,7 +105,7 @@ Notes:
 
 The server also offers two resources: `opentp://plan/summary` (the same as `describe_plan`) and `opentp://events/{key}` (the same as `get_event`; the key is URL-encoded, and an unknown key is a "resource not found" error).
 
-One response is at most 256 KB (UTF-8). A larger result is refused with a message that says how to narrow it: `target` and `version` for `get_event`, `keys` for `generate` (or run `opentp generate` in a terminal), a lower `limit`.
+The text of one tool result is at most 256 KB (UTF-8). A larger result is refused with a message that says how to narrow it: `target` and `version` for `get_event`, `keys` for `generate` (or run `opentp generate` in a terminal), a lower `limit`.
 
 A typical session to add an event: `describe_plan` → `search_events` (does it exist already?) → `suggest_event` → the agent writes the file → `validate_event_draft` or `validate_plan`.
 

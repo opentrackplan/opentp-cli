@@ -1,6 +1,6 @@
 {
   "name": "opentp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "specVersion": "2026-01",
   "description": "OpenTrackPlan CLI - validate and generate analytics tracking plans",
@@ -65,7 +65,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.0",
-    "yaml": "^2.8.1",
+    "yaml": "^2.8.4",
     "zod": "^4.6.5"
   }
 }

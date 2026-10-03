@@ -212,7 +212,7 @@ opentp generate json -o events.json     # Write to a file (relative to --root) i
 opentp generate json | jq '.events | length'   # stdout is complete and parseable
 ```
 
-Logs go to stderr; stdout carries only the report, the `--json` document or the generator output. Arguments are strict: an unknown command or option (`opentp valdiate`), an option the command does not accept, or an unexpected argument exits with code `2`. Run `opentp --help` for every option.
+Logs go to stderr; stdout carries only the report, the `--json` document, the generator output, or the MCP protocol (`opentp mcp`). Arguments are strict: an unknown command or option (`opentp valdiate`), an option the command does not accept, or an unexpected argument exits with code `2`. Run `opentp --help` for every option.
 
 | Exit code | Meaning |
 |-----------|---------|

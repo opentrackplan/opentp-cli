@@ -10,7 +10,7 @@ and exports the plan through generators.
   npm, now or later**; `package.json` is `"private": true` and the old npm package `opentp` (0.5.0) is
   obsolete. npm is only a development tool here. A Bun-only toolchain is a possible future direction,
   not decided.
-- **Version:** `package.json` `version` (0.8.0). Current release and installer state: see
+- **Version:** `package.json` `version` (0.9.0). Current release and installer state: see
   "Distribution state" under Known issues.
 - **Spec support:** **exactly `2026-01`** (`package.json` `specVersion`, read by `src/meta.ts`). Any
   other `opentp:` value is a hard error; older plans are not accepted.
@@ -51,7 +51,7 @@ and exports the plan through generators.
 | Language | TypeScript (strict). Source is ESM (`"type": "module"`) |
 | Node bundle | esbuild `src/index.ts` -> `dist/index.cjs` (CJS, target node18, `#!/usr/bin/env node`). Used for development, CI smoke tests and `npm link`; never published. `main` and `bin.opentp` both point to it (`files` is kept, but `private: true` blocks `npm publish`). No `exports`, no `types`, no `.d.ts`. The esbuild target only sets the syntax level; it is deliberately left below `engines` |
 | Binaries | `bun build src/cli.ts --compile` (the entry is `cli.ts`, not `index.ts`). The only distributed artifact |
-| Runtime deps | `yaml` ^2.8.1, `@modelcontextprotocol/server` ^2.3.0 (MCP SDK v2) and `zod` ^4 (its schema library, also imported directly); all bundled |
+| Runtime deps | `yaml` ^2.8.4, `@modelcontextprotocol/server` ^2.3.0 (MCP SDK v2) and `zod` ^4 (its schema library, also imported directly); all bundled |
 | Dev tooling | vitest 4.0.16, Biome 2.3.11, esbuild 0.25.x, TypeScript 5.9.x, `bun` ^1.3.5 as an npm devDependency, `@modelcontextprotocol/client` (MCP tests only) |
 | Node | `engines`: `^20.19.0 \|\| >=22.12.0` (what vite 7 / vitest 4 need; Node 18 is EOL). It describes only the development toolchain (build from source, tests); users run the binaries, which embed the Bun runtime and need no Node.js. Documented in README and getting-started ("From source") and CONTRIBUTING. The bundle's node18 syntax target does not make older runtimes supported, they are not tested. CI tests Node 20 and 22. Verified on 22.15 |
 | TypeScript configs | `tsconfig.json`: `src/` without specs (`resolveJsonModule` for `src/meta.ts`). `tsconfig.test.json` extends it and adds `*.spec.ts`. Both must have 0 errors |
@@ -360,7 +360,7 @@ anywhere. Anything unexpected is a `UsageError`: `✗ <message>` plus a two-line
 
 ## MCP server (`opentp mcp`)
 
-stdio only for now; an HTTP mode (`opentp serve` with `/mcp` and a web UI) is the
+Released in 0.9.0. stdio only for now; an HTTP mode (`opentp serve` with `/mcp` and a web UI) is the
 planned next step ("phase 2" below).
 
 - **SDK:** `@modelcontextprotocol/server` v2 (`McpServer`, `ResourceTemplate`, `serveStdio` from the
@@ -858,14 +858,14 @@ Pick the layer by where the problem lives, so that each problem is reported exac
   window fails (404 on the binary, or a missing `SHA256SUMS`, which is fatal for versions after
   0.7.4); it never installs unverified, and it never mixes the files of two releases (the tag is
   resolved once).
-- **Distribution state (as of 2026-10-02).** The latest release is `v0.8.0` (tag = `01c27ce`): four
-  binaries plus `SHA256SUMS`, each binary smoke-tested on its own runner. The installers install the
+- **Distribution state (as of 2026-10-03).** The latest release is `v0.9.0` (adds `opentp mcp`): four
+  binaries plus `SHA256SUMS`, each binary smoke-tested on its own runner (MCP smoke included). The installers install the
   latest release and verify it (they used to pin 0.7.3); releases up to `v0.7.4` have no `SHA256SUMS`
   and install with a warning. The npm package `opentp` (`0.0.1`, `0.5.0`; spec 2025-06, cannot read
   2026-01 plans) is obsolete and will not be updated (Rule 9); README and `docs/getting-started.md`
   say so once and tell users to `npm uninstall -g opentp`. opentp.dev serves `/install` and
   `/install.ps1` (302 to `raw.githubusercontent.com/.../main/install/...`) and the per-version schema
-  URLs, and its CLI docs are re-synced from `v0.8.0` (website `6d5a517`).
+  URLs, and it re-syncs its CLI docs from each release tag (see "Docs and website sync").
 
 - **`install.ps1` has never been run** (no PowerShell in this environment). It mirrors `install.sh`
   line by line, but PowerShell specifics (native `curl.exe` output capture, `throw` under
