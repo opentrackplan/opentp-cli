@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::login_button_click::click::login_button::p2::internal-false
@@ -10,6 +10,7 @@ event:
     action: User clicks the login button
     action_detail: "click::login button"
     custom_id: cid_login_button
+    release_date: 2026-09-01
 
   payload:
     schema:
@@ -25,7 +26,10 @@ event:
         value: google
       tags:
         value: [auth, login]
+      # Listed without changes: every iOS event must list device_model (policy: specified)
+      device_model: {}
       user_id:
+        # A type written in an event must equal the inherited one
         type: string
         pii:
           kind: user_id

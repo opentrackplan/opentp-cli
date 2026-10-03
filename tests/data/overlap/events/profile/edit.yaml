@@ -1,0 +1,17 @@
+opentp: 2026-09
+
+event:
+  key: profile::edit
+
+  taxonomy: {}
+
+  lifecycle:
+    status: deprecated
+    replacedBy: profile::update
+
+  payload:
+    schema:
+      event_category:
+        value: profile
+      event_name:
+        value: update

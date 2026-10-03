@@ -49,44 +49,43 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The summary is the last line of the combined output; "count=" is always its last field:
+      #   ✓ All events are valid count=N              (no warnings)
+      #   ✓ All events are valid warnings=W count=N
+      #   ✗ Validation failed errorCount=E warningCount=W eventCount=N
       - name: Smoke test (fixtures)
         run: |
           set -euo pipefail
           node dist/index.cjs --version
 
-          # coverage-valid: exit 0 and exactly 4 events loaded (a dropped event file would still exit 0).
-          rc=0
-          out="$(node dist/index.cjs validate --root tests/data/coverage-valid 2>&1)" || rc=$?
-          echo "$out"
-          if [ "$rc" -ne 0 ]; then
-            echo "::error::coverage-valid: expected exit code 0, got ${rc}"
+          # Runs the CLI; sets rc and out (stdout + stderr)
+          run() {
+            rc=0
+            out="$(node dist/index.cjs "$@" 2>&1)" || rc=$?
+          }
+          fail() {
+            echo "::error::$1"
             exit 1
-          fi
-          if ! grep -Eq 'count=4$' <<<"$out"; then
-            echo "::error::coverage-valid: expected 'count=4' in the output"
-            exit 1
-          fi
+          }
 
-          # coverage-invalid: must fail with validation errors.
-          rc=0
-          out="$(node dist/index.cjs validate --root tests/data/coverage-invalid 2>&1)" || rc=$?
+          # coverage-valid: exit 0, exactly 4 events loaded (a dropped event file would still exit 0) and
+          # no warnings.
+          run validate --root tests/data/coverage-valid
+          echo "$out"
+          [ "$rc" -eq 0 ] || fail "coverage-valid: expected exit code 0, got ${rc}"
+          grep -Eq 'All events are valid count=4$' <<<"$out" \
+            || fail "coverage-valid: expected 'All events are valid count=4' (no warnings) in the output"
+
+          # coverage-invalid: must fail with validation errors (exit 1, not a crash).
+          run validate --root tests/data/coverage-invalid
           echo "$out" | tail -n 3
-          if [ "$rc" -eq 0 ]; then
-            echo "::error::coverage-invalid: expected a non-zero exit code, got 0"
-            exit 1
-          fi
-          if ! grep -q 'Validation failed' <<<"$out"; then
-            echo "::error::coverage-invalid: exit code ${rc}, but no 'Validation failed' summary (crash?)"
-            exit 1
-          fi
+          [ "$rc" -eq 1 ] || fail "coverage-invalid: expected exit code 1, got ${rc}"
+          grep -q 'Validation failed errorCount=' <<<"$out" \
+            || fail "coverage-invalid: exit code ${rc}, but no 'Validation failed' summary"
 
           # Strict arguments: an unknown command is a usage error (exit 2), never a silent validate.
-          rc=0
-          node dist/index.cjs valdiate --root tests/data/coverage-valid >/dev/null 2>&1 || rc=$?
-          if [ "$rc" -ne 2 ]; then
-            echo "::error::unknown command: expected exit code 2, got ${rc}"
-            exit 1
-          fi
+          run valdiate --root tests/data/coverage-valid
+          [ "$rc" -eq 2 ] || fail "unknown command: expected exit code 2, got ${rc}"
 
           # stdout carries only command output: one JSON document with --json -v, and piped generator
           # output byte-identical to --output.
@@ -95,6 +94,67 @@ jobs:
           node dist/index.cjs generate json --root tests/data/coverage-valid > "$RUNNER_TEMP/stdout.json"
           node dist/index.cjs generate json --root tests/data/coverage-valid -o "$RUNNER_TEMP/output.json"
           cmp "$RUNNER_TEMP/stdout.json" "$RUNNER_TEMP/output.json"
+
+      - name: Smoke test (overlap, application repository, migrate)
+        run: |
+          set -euo pipefail
+          run() {
+            rc=0
+            out="$(node dist/index.cjs "$@" 2>&1)" || rc=$?
+          }
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          # Overlapping events (tool rule overlap): 12 events, no errors, exactly 4 warnings; with
+          # --fail-on overlap the same 4 are errors (exit 1).
+          run validate --root tests/data/overlap
+          echo "$out" | tail -n 1
+          [ "$rc" -eq 0 ] || fail "overlap: expected exit code 0, got ${rc}"
+          grep -Eq 'All events are valid warnings=4 count=12$' <<<"$out" \
+            || fail "overlap: expected 'All events are valid warnings=4 count=12'"
+          run validate --root tests/data/overlap --fail-on overlap
+          echo "$out" | tail -n 1
+          [ "$rc" -eq 1 ] || fail "overlap --fail-on overlap: expected exit code 1, got ${rc}"
+          grep -Eq 'Validation failed errorCount=4 warningCount=0 eventCount=12$' <<<"$out" \
+            || fail "overlap --fail-on overlap: expected 4 errors and no warnings"
+
+          # Application repository: opentp.cli.yaml with plan: ../tracker and no opentp.yaml.
+          run validate --root tests/data/application
+          echo "$out"
+          [ "$rc" -eq 0 ] || fail "application: expected exit code 0, got ${rc}"
+          grep -Eq 'All events are valid count=2$' <<<"$out" \
+            || fail "application: expected 'All events are valid count=2'"
+          # fix edits the plan repository, so it refuses to run here
+          run fix --root tests/data/application
+          [ "$rc" -eq 2 ] || fail "application: fix must exit with code 2, got ${rc}"
+
+          # opentp migrate (2026-01 -> 2026-09). The 2026-01 fixture itself stops validate (exit 2).
+          run validate --root tests/data/migrate-2026-01
+          [ "$rc" -eq 2 ] || fail "migrate: a 2026-01 plan must exit with code 2, got ${rc}"
+          grep -q 'Run "opentp migrate"' <<<"$out" || fail "migrate: no 'Run \"opentp migrate\"' guidance"
+          plan="$RUNNER_TEMP/migrate-2026-01"
+          rm -rf "$plan"
+          cp -R tests/data/migrate-2026-01 "$plan"
+          run migrate --root "$plan"
+          echo "$out"
+          [ "$rc" -eq 0 ] || fail "migrate: expected exit code 0, got ${rc}"
+          # The migrated files must equal the expected copy byte for byte
+          diff -r tests/data/migrate-2026-01.expected "$plan" \
+            || fail "migrate: the result differs from tests/data/migrate-2026-01.expected"
+          # The migrated plan validates (3 events; its one overlap warning is part of the fixture)
+          run validate --root "$plan"
+          echo "$out" | tail -n 1
+          [ "$rc" -eq 0 ] || fail "migrate: validate after migrate: expected exit code 0, got ${rc}"
+          grep -Eq 'All events are valid warnings=1 count=3$' <<<"$out" \
+            || fail "migrate: validate after migrate: expected 'All events are valid warnings=1 count=3'"
+          # A second run changes nothing
+          run migrate --root "$plan"
+          [ "$rc" -eq 0 ] && grep -q 'Nothing to migrate' <<<"$out" \
+            || fail "migrate: a second run must print 'Nothing to migrate' and exit 0 (exit code ${rc})"
+          run migrate --check --root "$plan"
+          [ "$rc" -eq 0 ] || fail "migrate --check on a migrated plan: expected exit code 0, got ${rc}"
 
       # `opentp mcp` over stdio: raw JSON-RPC, the tool list, three read-only tools, a clean exit; the
       # noisy plugins print to stdout, which must still carry only the protocol
@@ -121,7 +181,10 @@ jobs:
           "$RUNNER_TEMP/opentp" --version
           out="$("$RUNNER_TEMP/opentp" validate --root tests/data/coverage-valid 2>&1)"
           echo "$out"
-          grep -Eq 'count=4$' <<<"$out"
+          grep -Eq 'All events are valid count=4$' <<<"$out"
+          out="$("$RUNNER_TEMP/opentp" validate --root tests/data/application 2>&1)"
+          echo "$out"
+          grep -Eq 'All events are valid count=2$' <<<"$out"
           node tests/mcp-smoke.mjs "$RUNNER_TEMP/opentp" mcp --root tests/data/coverage-valid \
             --external-transforms tests/data/mcp-noisy-plugins/transforms \
             --external-rules tests/data/mcp-noisy-plugins/rules
@@ -135,7 +198,7 @@ jobs:
           printf 'preload = ["./preload.js"]\n' > "$probe/bunfig.toml"
           printf 'require("node:fs").writeFileSync("preload-ran", "x");\n' > "$probe/preload.js"
           printf 'OPENTP_LOG_LEVEL=bogus\n' > "$probe/.env"
-                    rc=0
+          rc=0
           (cd "$probe" && "$RUNNER_TEMP/opentp" validate --root plan > /dev/null 2>&1) || rc=$?
           if [ "$rc" -ne 0 ] || [ -e "$probe/preload-ran" ]; then
             echo "::error::the binary loaded bunfig.toml or .env from the working directory (exit code ${rc})"
@@ -146,7 +209,8 @@ jobs:
         id: spec
         run: echo "version=$(node -p "require('./package.json').specVersion")" >> "$GITHUB_OUTPUT"
 
-      # Checked out after lint/type-check/test so its files never reach those tools.
+      # Checked out after lint/type-check/test so its files never reach those tools. The tag must exist:
+      # cut the spec tag before bumping specVersion.
       - name: Checkout opentp-spec at the supported spec tag
         uses: actions/checkout@v4
         with:
@@ -156,18 +220,44 @@ jobs:
           persist-credentials: false
 
       - name: Smoke test (opentp-spec examples)
+        env:
+          SPEC_VERSION: ${{ steps.spec.outputs.version }}
         run: |
           set -euo pipefail
+          fail() {
+            echo "::error::opentp-spec ${SPEC_VERSION} $1"
+            exit 1
+          }
+
+          # simple and full: exit 0, some events, no errors and no warnings
           for example in simple full; do
             rc=0
             out="$(node dist/index.cjs validate --root "opentp-spec/examples/${example}" 2>&1)" || rc=$?
             echo "examples/${example}: ${out}"
-            if [ "$rc" -ne 0 ]; then
-              echo "::error::opentp-spec ${{ steps.spec.outputs.version }} examples/${example}: expected exit code 0, got ${rc}"
-              exit 1
-            fi
-            if ! grep -Eq 'count=[1-9][0-9]*$' <<<"$out"; then
-              echo "::error::opentp-spec ${{ steps.spec.outputs.version }} examples/${example}: no events were loaded"
-              exit 1
-            fi
+            [ "$rc" -eq 0 ] || fail "examples/${example}: expected exit code 0, got ${rc}"
+            # "valid warnings=N count=M" would mean warnings
+            grep -Eq 'All events are valid count=[1-9][0-9]*$' <<<"$out" \
+              || fail "examples/${example}: no events were loaded, or there were warnings"
           done
+
+          # extensions: exit 0, no errors, and exactly two warnings: unknownCheck for its tool-defined
+          # mytool.* checks (a tool that does not know a check id reports it and skips it)
+          rc=0
+          node dist/index.cjs validate --json --root opentp-spec/examples/extensions \
+            > "$RUNNER_TEMP/extensions.json" || rc=$?
+          cat "$RUNNER_TEMP/extensions.json"
+          [ "$rc" -eq 0 ] || fail "examples/extensions: expected exit code 0, got ${rc}"
+          node -e '
+            const doc = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            const ids = doc.warnings.map((w) =>
+              w.rule === "unknownCheck" ? /^Unknown check \x27([^\x27]+)\x27/.exec(w.message)?.[1] : undefined);
+            const ok = doc.success === true && doc.events > 0 && doc.errors.length === 0 &&
+              ids.length === 2 && new Set(ids).size === 2 &&
+              ids.every((id) => typeof id === "string" && id.startsWith("mytool."));
+            if (!ok) {
+              console.error(`unexpected result: ${doc.errors.length} errors, warnings ${JSON.stringify(doc.warnings)}`);
+              process.exit(1);
+            }
+            console.log(`examples/extensions: ${doc.events} events, unknownCheck warnings for ${ids.join(", ")}`);
+          ' "$RUNNER_TEMP/extensions.json" \
+            || fail "examples/extensions: expected no errors and only the two mytool.* unknownCheck warnings"

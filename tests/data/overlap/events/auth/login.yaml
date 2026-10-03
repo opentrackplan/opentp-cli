@@ -1,0 +1,15 @@
+opentp: 2026-09
+
+event:
+  key: auth::login
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_category:
+        value: auth
+      event_name:
+        value: login
+      # Optional: (auth_method IN (email, google, github) OR auth_method IS ABSENT)
+      auth_method: {}

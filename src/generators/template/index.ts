@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { buildExportData } from "../export";
 import type { GeneratorContext, GeneratorDefinition, GeneratorResult } from "../types";
 
 /**
@@ -84,22 +85,15 @@ function render(template: string, data: TemplateData): string {
 }
 
 /**
- * Build template data from context
+ * Build template data from context: the json export (opentp, info, catalog, targets, checks,
+ * events with payload and effectivePayload, dictionaries) plus the tracker binding and the whole
+ * opentp.yaml as `config`
  */
 function buildTemplateData(context: GeneratorContext): TemplateData {
-  const { config, events, dictionaries } = context;
-
   return {
-    opentp: config.opentp,
-    info: config.info,
-    events: events.map((e) => ({
-      key: e.key,
-      taxonomy: e.taxonomy,
-      lifecycle: e.lifecycle,
-      payload: e.payload,
-    })),
-    dictionaries: Object.fromEntries(dictionaries),
-    config,
+    ...buildExportData(context),
+    tracker: context.tracker ?? null,
+    config: context.config,
   };
 }
 

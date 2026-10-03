@@ -10,6 +10,7 @@ import { Writable } from "node:stream";
 import { McpServer, ResourceNotFoundError, ResourceTemplate } from "@modelcontextprotocol/server";
 import { StdioServerTransport, serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
+import { MCP_TOOL_GROUPS, type McpToolGroup } from "../cliconfig/schema";
 import { VERSION } from "../meta";
 import { logger } from "../util/logger";
 import { PlanError, type PlanSnapshot, type PlanStore } from "./plan";
@@ -28,13 +29,63 @@ import {
 } from "./tools";
 
 const READ_ONLY = { readOnlyHint: true, idempotentHint: true, openWorldHint: false } as const;
-/** Validation runs the plan's checks, and a `webhook` check (opentp.yaml or an event file) calls its URL */
+/** Validation runs the plan's checks, and a webhook binding (opentp.cli.yaml) calls its URL */
 const VALIDATES = { readOnlyHint: true, idempotentHint: true, openWorldHint: true } as const;
 
-const INSTRUCTIONS = `OpenTrackPlan tracking plan (read-only tools).
-Start with describe_plan to learn the taxonomy, targets, common payload fields and key rules.
-Find events with search_events (plain words work best), then read one with get_event.
-To add or change an event: call suggest_event (file path, generated key, YAML skeleton), write the YAML file yourself, then call validate_event_draft (before writing) or validate_plan (after). These tools never write files. Validation runs the plan's checks, including webhook checks from opentp.yaml and from event files on disk.`;
+/**
+ * The server instructions for the enabled tool groups: they name only tools that are registered
+ * (an agent that follows them must not call a tool that does not exist)
+ */
+export function mcpInstructions(groups: ReadonlySet<McpToolGroup>): string {
+  const describe = groups.has("describe");
+  const search = groups.has("search");
+  const validate = groups.has("validate");
+  const lines = ["OpenTrackPlan tracking plan (read-only tools)."];
+  if (describe) {
+    lines.push(
+      "Start with describe_plan to learn the taxonomy, targets, field catalog, common payload fields (with their policies), key rules and the tracker binding.",
+    );
+  }
+  if (search) {
+    lines.push(
+      describe
+        ? "Find events with search_events (plain words work best), then read one with get_event."
+        : "Find events with search_events (plain words work best).",
+    );
+  } else if (describe) {
+    lines.push("Read an event by its key with get_event.");
+  }
+  if (describe && validate) {
+    lines.push(
+      "To add or change an event: call suggest_event (file path, generated key, YAML skeleton), write the YAML file yourself, then call validate_event_draft (before writing) or validate_plan (after).",
+    );
+  } else if (describe) {
+    lines.push(
+      "To add an event: call suggest_event (file path, generated key, YAML skeleton) and write the YAML file yourself.",
+    );
+  } else if (validate) {
+    lines.push(
+      "To check an event file: call validate_event_draft (before writing it) or validate_plan (after).",
+    );
+  }
+  if (validate) {
+    lines.push(
+      "Only errors make an event invalid; warnings (for example an overlap with another event) are worth a look. Validation runs the plan's checks, including webhook bindings from opentp.cli.yaml for the event files on disk (never for drafts).",
+    );
+  }
+  if (groups.has("generate")) {
+    lines.push(
+      "Export the plan (or some events) as text with generate: json or yaml, or a generate.run entry of opentp.cli.yaml.",
+    );
+  }
+  lines.push("These tools never write files.");
+  return lines.join("\n");
+}
+
+export interface McpServerOptions {
+  /** Tool groups to register (opentp.cli.yaml mcp.tools; default: all) */
+  tools?: ReadonlySet<McpToolGroup>;
+}
 
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -94,38 +145,47 @@ function resourceText(value: unknown): string {
   return text;
 }
 
-/** Builds the MCP server: cheap, so it can be called per connection (stdio) or per request (HTTP) */
-export function buildMcpServer(store: PlanStore): McpServer {
+/**
+ * Builds the MCP server: cheap, so it can be called per connection (stdio) or per request (HTTP).
+ * Only the enabled tool groups are registered: describe (describe_plan, get_event,
+ * list_dictionaries, get_dictionary, suggest_event and both resources), search (search_events),
+ * validate (validate_event_draft, validate_plan), generate (generate).
+ */
+export function buildMcpServer(store: PlanStore, options: McpServerOptions = {}): McpServer {
+  const groups = options.tools ?? new Set(MCP_TOOL_GROUPS);
   const server = new McpServer(
     { name: "opentp", title: "OpenTrackPlan", version: VERSION },
-    { instructions: INSTRUCTIONS },
+    { instructions: mcpInstructions(groups) },
   );
 
+  if (groups.has("describe")) registerDescribeTools(server, store, groups);
+  if (groups.has("search")) registerSearchTools(server, store, groups);
+  if (groups.has("validate")) registerValidateTools(server, store, groups);
+  if (groups.has("generate")) registerGenerateTools(server, store);
+
+  return server;
+}
+
+/*
+ * Tool descriptions name another tool only when its group is served (`groups`), like the
+ * instructions.
+ */
+
+function registerDescribeTools(
+  server: McpServer,
+  store: PlanStore,
+  groups: ReadonlySet<McpToolGroup>,
+): void {
   server.registerTool(
     "describe_plan",
     {
       title: "Describe the tracking plan",
       description:
-        "The plan's structure: taxonomy fields (and which come from the file path), path template, key rules and keygen template, targets, common payload fields, PII settings and counts. Call this first.",
+        "The plan's structure: taxonomy fields (and which come from the file path), path template, key rules and whether keygen is configured, targets, the field catalog (fields events may use), the common fields of each target with their policy (specified, restricted, fixed: what every event must write), spec.checks, the tracker binding (where each field travels in the tracker payload, per target; tracker in opentp.cli.yaml), PII settings and counts. Call this first.",
       inputSchema: z.object({}),
       annotations: READ_ONLY,
     },
-    async () => run(store, (plan) => describePlan(plan)),
-  );
-
-  server.registerTool(
-    "search_events",
-    {
-      title: "Search events",
-      description:
-        "Find events by words or a description of when they fire (lexical search over keys, taxonomy values, including the values that form the file path, and the payload fields each event defines). A whole key as the query puts that event first. Returns keys for get_event.",
-      inputSchema: z.object({
-        query: z.string().min(1).max(1000).describe("Words, a phrase or part of a key"),
-        limit: z.number().int().min(1).max(50).optional().describe("Default 10"),
-      }),
-      annotations: READ_ONLY,
-    },
-    async (args) => run(store, (plan) => searchEvents(plan, args)),
+    async () => run(store, (plan) => describePlan(plan, groups)),
   );
 
   server.registerTool(
@@ -173,52 +233,11 @@ export function buildMcpServer(store: PlanStore): McpServer {
   );
 
   server.registerTool(
-    "validate_event_draft",
-    {
-      title: "Validate an event draft",
-      description:
-        "Validates event YAML as if it were saved at `path`, without writing anything: file path vs the path template, taxonomy, key (including uniqueness across the plan) and payload.",
-      inputSchema: z.object({
-        path: z
-          .string()
-          .min(1)
-          .describe(
-            "Where the file would be, relative to the events root or the project root (see suggest_event)",
-          ),
-        yaml: z
-          .string()
-          .max(1_000_000)
-          .describe("The full event file content (at most 1,000,000 characters)"),
-      }),
-      annotations: VALIDATES,
-    },
-    async (args) => run(store, (plan) => validateEventDraft(plan, args)),
-  );
-
-  server.registerTool(
-    "validate_plan",
-    {
-      title: "Validate the plan",
-      description:
-        "Validation errors of the whole plan as `opentp validate` reports them. With `files`: their errors and whether opentp loads each file at all (a file that does not match the path template is skipped silently by opentp).",
-      inputSchema: z.object({
-        files: z
-          .array(z.string().min(1))
-          .optional()
-          .describe("Only errors of these event files (relative to the events or project root)"),
-        limit: z.number().int().min(1).max(1000).optional().describe("Default 100"),
-      }),
-      annotations: VALIDATES,
-    },
-    async (args) => run(store, (plan) => validatePlan(plan, args)),
-  );
-
-  server.registerTool(
     "suggest_event",
     {
       title: "Suggest a new event",
       description:
-        "For taxonomy values: the file path, the generated key, a YAML skeleton, required common payload fields, conflicts with existing events, and what the skeleton still lacks. Writes nothing.",
+        "For taxonomy values: the file path, the key generated by keygen (opentp.cli.yaml), a YAML skeleton that lists every field with a policy (replace each <...> placeholder: a value for fixed, enum values or a value for restricted; an array field takes only a value), required common payload fields, conflicts with existing events, and what the skeleton still lacks (skeletonErrors). Writes nothing.",
       inputSchema: z.object({
         taxonomy: z
           .record(z.string(), taxonomyValue)
@@ -227,26 +246,6 @@ export function buildMcpServer(store: PlanStore): McpServer {
       annotations: VALIDATES,
     },
     async (args) => run(store, (plan) => suggestEvent(plan, args)),
-  );
-
-  server.registerTool(
-    "generate",
-    {
-      title: "Export events",
-      description:
-        "Exports the plan (or some events) with the json or yaml generator, like `opentp generate`. Exports over 256 KB are refused: pass keys.",
-      inputSchema: z.object({
-        generator: z.enum(["json", "yaml"]),
-        keys: z.array(z.string().min(1)).optional().describe("Only these event keys"),
-      }),
-      annotations: READ_ONLY,
-    },
-    async (args) =>
-      run(store, (plan) => generate(plan, args), {
-        // The export goes once, as the text; the structured content carries only its metadata
-        text: (result) => String(result.output),
-        structured: ({ output: _output, ...metadata }) => metadata,
-      }),
   );
 
   server.registerResource(
@@ -259,7 +258,7 @@ export function buildMcpServer(store: PlanStore): McpServer {
     },
     async (uri) => {
       const plan = await store.current();
-      return { contents: [{ uri: uri.href, text: resourceText(describePlan(plan)) }] };
+      return { contents: [{ uri: uri.href, text: resourceText(describePlan(plan, groups)) }] };
     },
   );
 
@@ -285,8 +284,101 @@ export function buildMcpServer(store: PlanStore): McpServer {
       return { contents: [{ uri: uri.href, text: resourceText(event) }] };
     },
   );
+}
 
-  return server;
+function registerSearchTools(
+  server: McpServer,
+  store: PlanStore,
+  groups: ReadonlySet<McpToolGroup>,
+): void {
+  server.registerTool(
+    "search_events",
+    {
+      title: "Search events",
+      description: `Find events by words or a description of when they fire (lexical search over keys, taxonomy values, including the values that form the file path, and the payload fields each event defines). A whole key as the query puts that event first. ${groups.has("describe") ? "Returns keys for get_event." : "Returns event keys."}`,
+      inputSchema: z.object({
+        query: z.string().min(1).max(1000).describe("Words, a phrase or part of a key"),
+        limit: z.number().int().min(1).max(50).optional().describe("Default 10"),
+      }),
+      annotations: READ_ONLY,
+    },
+    async (args) => run(store, (plan) => searchEvents(plan, args)),
+  );
+}
+
+function registerValidateTools(
+  server: McpServer,
+  store: PlanStore,
+  groups: ReadonlySet<McpToolGroup>,
+): void {
+  server.registerTool(
+    "validate_event_draft",
+    {
+      title: "Validate an event draft",
+      description:
+        "Validates event YAML as if it were saved at `path`, without writing anything: file path vs the path template, taxonomy, key (including uniqueness across the plan) and payload. Returns errors (they make it invalid) and warnings: unknown check ids, and events of the plan whose payload can match the same hits (overlap; the event at the same path is left out). Webhook bindings are not run for drafts.",
+      inputSchema: z.object({
+        path: z
+          .string()
+          .min(1)
+          .describe(
+            `Where the file would be, relative to the events root or the project root${groups.has("describe") ? " (see suggest_event)" : ""}`,
+          ),
+        yaml: z
+          .string()
+          .max(1_000_000)
+          .describe("The full event file content (at most 1,000,000 characters)"),
+      }),
+      annotations: VALIDATES,
+    },
+    async (args) => run(store, (plan) => validateEventDraft(plan, args)),
+  );
+
+  server.registerTool(
+    "validate_plan",
+    {
+      title: "Validate the plan",
+      description:
+        "Validation errors and warnings (overlapping events, unknown check ids) of the whole plan as `opentp validate` reports them; only errors make it invalid. With `files`: their errors and warnings, and whether opentp loads each file at all (a file that does not match the path template is skipped silently by opentp).",
+      inputSchema: z.object({
+        files: z
+          .array(z.string().min(1))
+          .optional()
+          .describe("Only errors of these event files (relative to the events or project root)"),
+        limit: z.number().int().min(1).max(1000).optional().describe("Default 100"),
+      }),
+      annotations: VALIDATES,
+    },
+    async (args) => run(store, (plan) => validatePlan(plan, args)),
+  );
+}
+
+function registerGenerateTools(server: McpServer, store: PlanStore): void {
+  server.registerTool(
+    "generate",
+    {
+      title: "Export events",
+      description:
+        "Exports the plan (or some events) like `opentp generate` and returns the text; it never writes a file. Pass generator (json or yaml: catalog, targets, checks and every event with its raw and effective payload), or run: the index of a generate.run entry of opentp.cli.yaml, whose generator, target, events and template file are used (its output file is not written). Exports over 256 KB are refused: pass keys.",
+      inputSchema: z.object({
+        generator: z.enum(["json", "yaml"]).optional().describe("A built-in export generator"),
+        run: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Index of a generate.run entry in opentp.cli.yaml (0 is the first)"),
+        keys: z.array(z.string().min(1)).optional().describe("Only these event keys"),
+      }),
+      annotations: READ_ONLY,
+    },
+    async (args) =>
+      run(store, (plan) => generate(plan, args), {
+        // The export goes once, as the text; the structured content carries only its metadata
+        text: (result) => String(result.output),
+        structured: ({ output: _output, ...metadata }) => metadata,
+      }),
+  );
 }
 
 const CONSOLE_METHODS = [
@@ -345,9 +437,12 @@ export function reserveStdoutForProtocol(): Writable {
 }
 
 /** Serves MCP over stdin/stdout until the client closes stdin */
-export async function serveMcpStdio(store: PlanStore): Promise<void> {
+export async function serveMcpStdio(
+  store: PlanStore,
+  options: McpServerOptions = {},
+): Promise<void> {
   const transport = new StdioServerTransport(process.stdin, reserveStdoutForProtocol());
-  const handle = serveStdio(() => buildMcpServer(store), {
+  const handle = serveStdio(() => buildMcpServer(store, options), {
     transport,
     onerror: (error) => logger.error({ error: error.message }, "MCP transport error"),
   });

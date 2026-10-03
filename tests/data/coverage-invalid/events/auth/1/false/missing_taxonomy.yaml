@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 # event.taxonomy is required (even when every taxonomy field comes from the path). The file cannot
 # be loaded.

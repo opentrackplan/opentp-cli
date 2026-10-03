@@ -1,0 +1,44 @@
+opentp: 2026-09
+
+event:
+  key: auth::example_checks::p1::internal-false
+
+  taxonomy:
+    action: Examples are checked where they are written; inherited ones may be dropped
+    action_detail: "test::examples"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: example_checks
+        event_category:
+          value: auth
+        country_code:
+          example: US
+        sign_in_method:
+          enum: [email]
+          example: google
+        screen_name:
+          # Tool checks (short-name) never apply to examples; the type does
+          example: 5
+        ticket_id:
+          # Portable checks (spec.checks) apply to examples
+          example: ticket 7
+        # The catalog example (team) is dropped: no error
+        plan_tier:
+          enum: [free, pro]
+    ios:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: example_checks
+        event_category:
+          value: auth
+        plan_tier:
+          example: gold
+        screen_name:
+          example: a very long screen name

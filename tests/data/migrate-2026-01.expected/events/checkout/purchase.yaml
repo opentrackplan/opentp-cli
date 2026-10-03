@@ -1,0 +1,26 @@
+opentp: 2026-09 # header comment
+event:
+  key: checkout::purchase
+  taxonomy: {}
+  ignore:
+    - path: payload.web.schema.price
+      reason: Prices are checked by the shop
+  payload:
+    web:
+      schema:
+        event_category: { value: checkout }
+        event_name: { value: purchase }
+        event_label: { value: Buy }
+        price: { value: 9.99 }
+        products:
+          type: array
+          items:
+            type: string
+    mobile:
+      schema:
+        event_category: { value: checkout }
+        event_name: { value: purchase }
+        quantity: { value: 2 }
+        device_model: {}
+        dimension_1: &slot { type: string }
+        dimension_2: *slot

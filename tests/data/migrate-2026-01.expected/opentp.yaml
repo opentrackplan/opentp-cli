@@ -1,0 +1,97 @@
+# A 2026-01 plan that covers every change opentp migrate makes.
+# Comments and formatting must survive byte for byte.
+opentp: "2026-09" # spec version
+
+info:
+  title: Migrate Fixture
+  version: 1.0.0
+  description: Input of the opentp migrate fixture test
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
+  # Events: key constraints, key generation, taxonomy and payload
+  events:
+    key:
+      pattern: '^[a-z_]+::[a-z_]+$'
+
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        dict: taxonomy/areas
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+      ticket:
+        title: Ticket
+        type: string
+        required: false
+        checks:
+          webhook-2: true
+
+    payload:
+      targets:
+        all: [web, ios, android]
+        mobile: [ios, android]
+
+      # Base fields: part of every event
+      schema:
+        button_id: { type: string }
+        device_model: { type: string }
+        dimension_1: { type: string }
+        dimension_2: { type: string }
+        dimension_3: { type: string }
+        dimension_4: { type: string }
+        dimension_5: { type: string }
+        dimension_6: { type: string }
+        price: { type: number }
+        products: { type: array, items: { type: string } }
+        quantity: { type: integer }
+        session_note: { type: string }
+
+  # Target base fields
+  targets:
+    all:
+      schema:
+        application_id:
+          type: string
+          dict: data/application_id
+          required: true
+        event_category:   # pinned by every event
+          type: string
+          policy: fixed
+        event_name:
+          type: string
+          policy: fixed
+        event_label: { type: string }
+        platform:
+          type: string
+        schema_version:
+          type: integer
+          value: 3
+
+        user_id:
+          type: string
+        session_id:
+          type: string
+          checks:
+            min-length: 8
+        consent:
+          type: boolean
+        app_version: { type: string, example: "1.10" }
+    ios:
+      schema:
+        platform: { value: ios }
+        device_model: { type: string }
+    android:
+      schema:
+        platform:
+          value: android

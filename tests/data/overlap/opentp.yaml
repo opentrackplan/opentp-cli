@@ -1,0 +1,52 @@
+opentp: 2026-09
+
+info:
+  title: Overlap Fixture
+  version: 1.0.0
+  description: Events whose predicates can match the same hits (tool rule overlap); no errors
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
+  events:
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+
+    payload:
+      targets:
+        all: [web, ios]
+      # Field catalog
+      schema:
+        event_name:
+          type: string
+        event_label:
+          type: string
+        screen:
+          type: string
+          enum: [home, settings, checkout]
+        auth_method:
+          type: string
+          dict: auth_methods
+
+  # Common fields: part of every event on every target
+  targets:
+    all:
+      schema:
+        application_id:
+          type: string
+          value: acme-app
+        event_category:
+          type: string
+          policy: restricted

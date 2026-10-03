@@ -7,18 +7,40 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
+import { resolveCliPath } from "../cliconfig";
+import { getRunEntryProblems } from "../cliconfig/run";
+import { MCP_TOOL_GROUPS, type McpToolGroup } from "../cliconfig/schema";
+import { getDictValues } from "../core/dict";
 import { createEventLoadContext, type EventLoadIssue, loadEventDocument } from "../core/event";
-import { resolveEffectivePayload, UNVERSIONED_VERSION_KEY } from "../core/payload";
-import { configIssuesToErrors, loadIssuesToErrors } from "../core/validator";
-import { getGenerator } from "../generators";
+import { targetIds } from "../core/fields";
+import {
+  type BaseField,
+  type FieldLayer,
+  fieldMap,
+  mergeBaseLayers,
+  resolveEffectivePayload,
+  UNVERSIONED_VERSION_KEY,
+} from "../core/payload";
+import { filterEvents } from "../core/select";
+import {
+  cliConfigIssuesToErrors,
+  configIssuesToErrors,
+  errorsOnly,
+  loadIssuesToErrors,
+  warningsOnly,
+} from "../core/validator";
+import { type GeneratorOptions, getGenerator } from "../generators";
+import { generatorContext } from "../generators/context";
 import type { Field, ResolvedEvent, ValidationError } from "../types";
 import {
   extractTemplateVariables,
   getMatchTemplateProblems,
   isYamlMapping,
   parsePattern,
+  setOwn,
 } from "../util";
+import { parseYaml } from "../util/yaml";
 import type { PlanSnapshot } from "./plan";
 
 /** A problem with the tool call itself (unknown key, bad path): returned to the client as an error */
@@ -34,16 +56,23 @@ const MAX_DICTIONARY_VALUES = 5000;
 interface ErrorEntry {
   path: string;
   message: string;
+  /** The tool rule of a warning (`overlap`, `unknownCheck`) */
+  rule?: string;
 }
 
 function errorEntries(errors: ValidationError[]): ErrorEntry[] {
-  return errors.map(({ path: errorPath, message }) => ({ path: errorPath, message }));
+  return errors.map(({ path: errorPath, message, rule }) => ({
+    path: errorPath,
+    message,
+    ...(rule ? { rule } : {}),
+  }));
 }
 
 /** Problems of the plan itself that block a complete load (generate refuses on them, like the CLI) */
 function loadProblems(plan: PlanSnapshot): ValidationError[] {
   return [
     ...configIssuesToErrors(plan.configIssues),
+    ...cliConfigIssuesToErrors(plan.cliIssues),
     ...loadIssuesToErrors(plan.dictIssues, plan.eventIssues),
   ];
 }
@@ -107,28 +136,33 @@ function fileStatus(plan: PlanSnapshot, relativePath: string) {
   };
 }
 
-/**
- * Removes `webhook` checks that a draft defines itself: validating a draft must not send requests to
- * URLs (with `${ENV}` values) chosen by whoever wrote the draft. Checks from opentp.yaml still run.
- * Returns how many were removed.
- */
-function removeDraftWebhooks(value: unknown): number {
-  if (Array.isArray(value)) return value.reduce((sum, item) => sum + removeDraftWebhooks(item), 0);
-  if (!isYamlMapping(value)) return 0;
-  let removed = 0;
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "checks" && isYamlMapping(child) && Object.hasOwn(child, "webhook")) {
-      delete child.webhook;
-      removed++;
-    }
-    removed += removeDraftWebhooks(child);
-  }
-  return removed;
-}
-
 // --- describe_plan -------------------------------------------------------------------------------
 
-export function describePlan(plan: PlanSnapshot) {
+/**
+ * The common fields of each target (spec.targets.all and spec.targets.<T>, merged over the catalog):
+ * part of every event on that target, with their policy
+ */
+function commonFieldsByTarget(plan: PlanSnapshot): Record<string, Record<string, Field>> {
+  const out: Record<string, Record<string, Field>> = {};
+  for (const target of targetIds(plan.config)) {
+    const fields: Record<string, Field> = {};
+    for (const [name, base] of mergeBaseLayers(plan.config, target).fields) {
+      // The merged definition, policy included
+      if (base.common) setOwn(fields, name, base.field);
+    }
+    out[target] = fields;
+  }
+  return out;
+}
+
+/**
+ * The plan's structure for describe_plan (and the plan summary resource). `groups` are the tool
+ * groups the server serves: `howTo` names only their tools.
+ */
+export function describePlan(
+  plan: PlanSnapshot,
+  groups: ReadonlySet<McpToolGroup> = new Set(MCP_TOOL_GROUPS),
+) {
   const { config } = plan;
   const problems = templateProblems(plan);
   const pathFields = new Set(problems.length === 0 ? templateVariables(plan.eventsTemplate) : []);
@@ -138,9 +172,11 @@ export function describePlan(plan: PlanSnapshot) {
       ? { ...definition, fromPath: pathFields.has(name) }
       : definition;
   }
-  const targetSchemas: Record<string, unknown> = {};
+  const targetSettings: Record<string, unknown> = {};
   for (const [id, target] of Object.entries(config.spec.targets ?? {})) {
-    targetSchemas[id] = target?.schema ?? {};
+    if (!isYamlMapping(target)) continue;
+    const { schema: _schema, ...settings } = target;
+    if (Object.keys(settings).length > 0) targetSettings[id] = settings;
   }
 
   return {
@@ -148,6 +184,8 @@ export function describePlan(plan: PlanSnapshot) {
     version: config.info.version,
     description: config.info.description ?? null,
     opentp: config.opentp,
+    // Application repository mode: the plan that opentp.cli.yaml pins (plan:)
+    ...(plan.pinnedPlan !== null ? { pinnedPlan: plan.pinnedPlan } : {}),
     eventsRoot: plan.eventsRoot,
     pathTemplate: plan.eventsTemplate,
     ...(problems.length > 0 ? { pathTemplateProblems: problems } : {}),
@@ -155,11 +193,20 @@ export function describePlan(plan: PlanSnapshot) {
     taxonomy,
     key: {
       constraints: config.spec.events.key ?? null,
-      keygenTemplate: config.spec.events["x-opentp"]?.keygen?.template ?? null,
+      // Key generation is a tool setting: keygen in opentp.cli.yaml
+      keygen: plan.keygen !== null,
+      keygenTemplate: plan.keygen?.template ?? null,
     },
     targets: config.spec.events.payload.targets,
-    baseSchema: config.spec.events.payload.schema,
-    targetSchemas,
+    // The fields events may use (listing a field here does not add it to events)
+    catalog: fieldMap(config.spec.events.payload.schema),
+    // Per target id: the fields that are part of every event on it, merged over the catalog
+    commonFields: commonFieldsByTarget(plan),
+    // spec.targets settings other than the common fields (title, description, x-*)
+    ...(Object.keys(targetSettings).length > 0 ? { targetSettings } : {}),
+    checks: config.spec.checks ?? {},
+    // Where each field travels in the tracker payload, per target (tracker in opentp.cli.yaml)
+    tracker: plan.tracker,
     pii: config.spec.events.pii ?? null,
     counts: {
       events: plan.events.length,
@@ -168,8 +215,14 @@ export function describePlan(plan: PlanSnapshot) {
     },
     howTo: [
       "Taxonomy fields with fromPath=true come from the event file path (pathTemplate); the others are set in event.taxonomy.",
-      "Find events with search_events, then read one with get_event (effective payload per target).",
-      "To add or change an event: call suggest_event for the file path, key and a skeleton, write the YAML file, then call validate_event_draft (before writing) or validate_plan (after).",
+      "An event payload may use the catalog fields and the common fields of each target it covers; common fields are part of every event on their target. A policy says what every event must write: specified (list the field), restricted (an enum, a dict or a value; an array field only a value), fixed (a value).",
+      // describe_plan is in the describe group, with get_event and suggest_event
+      groups.has("search")
+        ? "Find events with search_events, then read one with get_event (effective payload per target)."
+        : "Read an event by its key with get_event (effective payload per target).",
+      groups.has("validate")
+        ? "To add or change an event: call suggest_event for the file path, key and a skeleton, write the YAML file, then call validate_event_draft (before writing) or validate_plan (after)."
+        : "To add an event: call suggest_event for the file path, key and a skeleton, and write the YAML file.",
     ],
   };
 }
@@ -240,7 +293,9 @@ export function getEvent(
   if (args.version === UNVERSIONED_VERSION_KEY) {
     throw new ToolError(`Event '${event.key}' has no payload version '${args.version}'`);
   }
-  const { targets, issues } = resolveEffectivePayload(event.payload, plan.config);
+  const { targets, issues } = resolveEffectivePayload(event.payload, plan.config, (dict) =>
+    getDictValues(dict, plan.dictionaries),
+  );
 
   let entries = Object.values(targets);
   if (args.target !== undefined) {
@@ -252,7 +307,7 @@ export function getEvent(
     }
   }
 
-  // Targets with the same version and effective schema are listed together (an implicit `all`
+  // Targets with the same version and effective fields are listed together (an implicit `all`
   // payload would otherwise repeat one schema per target)
   const groups = new Map<
     string,
@@ -263,6 +318,7 @@ export function getEvent(
       versions: string[];
       aliases: Record<string, string>;
       schema: Record<string, Field>;
+      layers: Record<string, FieldLayer[]>;
     }
   >();
   const withoutVersion: string[] = [];
@@ -286,7 +342,10 @@ export function getEvent(
       current: entry.current === UNVERSIONED_VERSION_KEY ? null : entry.current,
       versions: Object.keys(entry.versions).filter((key) => key !== UNVERSIONED_VERSION_KEY),
       aliases: entry.aliases,
+      // 2026-09 effective fields: the common fields of the target plus the fields the version lists,
+      // each merged over the catalog and common fields; `layers` says where each one comes from
       schema,
+      layers: entry.layers[versionKey] ?? {},
     };
     const id = JSON.stringify(shown);
     const group = groups.get(id);
@@ -344,7 +403,12 @@ function loadDraft(plan: PlanSnapshot, file: string, readDocument: () => unknown
   const relativePath = plan.eventsRelativePath(file);
   checkRelativePath(relativePath);
   const contextIssues: EventLoadIssue[] = [];
-  const context = createEventLoadContext(plan.config, plan.eventsTemplate, contextIssues);
+  const context = createEventLoadContext(
+    plan.config,
+    plan.eventsTemplate,
+    plan.keygen,
+    contextIssues,
+  );
   const result = loadEventDocument(
     context,
     relativePath,
@@ -354,10 +418,20 @@ function loadDraft(plan: PlanSnapshot, file: string, readDocument: () => unknown
   return { relativePath, result, keygenConfigured: context.keygen !== null };
 }
 
-/** Validates one loaded draft against the plan: event checks plus key uniqueness across the plan */
-async function checkDraft(plan: PlanSnapshot, event: ResolvedEvent) {
-  const all = await plan.validateEvents([event]);
+/**
+ * Validates one loaded draft against the plan: event checks plus key uniqueness across the plan,
+ * and with `overlap` the overlap with the plan's events (tool rule `overlap`, with its severity).
+ * Webhook bindings are not run for drafts (their ids are returned in skippedWebhooks).
+ */
+async function checkDraft(plan: PlanSnapshot, event: ResolvedEvent, overlap = false) {
+  const validation = await plan.validateDrafts([event]);
+  const results = overlap
+    ? [...validation.results, ...plan.draftOverlaps(event)]
+    : validation.results;
+  const { skippedWebhooks } = validation;
+  const all = errorsOnly(results);
   const errors = all.filter((error) => error.event === event.relativePath);
+  const warnings = warningsOnly(results).filter((warning) => warning.event === event.relativePath);
   const planProblems = all.length - errors.length;
   const duplicate = plan.events.find(
     (other) => other.key === event.key && other.relativePath !== event.relativePath,
@@ -370,7 +444,12 @@ async function checkDraft(plan: PlanSnapshot, event: ResolvedEvent) {
       severity: "error",
     });
   }
-  return { errors: errorEntries(errors), planProblems };
+  return {
+    errors: errorEntries(errors),
+    warnings: errorEntries(warnings),
+    planProblems,
+    skippedWebhooks,
+  };
 }
 
 /** How a draft relates to the file at its path: none, a loaded event, or a file opentp cannot load */
@@ -384,12 +463,7 @@ function existingFileInfo(plan: PlanSnapshot, relativePath: string) {
 }
 
 export async function validateEventDraft(plan: PlanSnapshot, args: { path: string; yaml: string }) {
-  let webhooksSkipped = 0;
-  const { relativePath, result } = loadDraft(plan, args.path, () => {
-    const document = parseYaml(args.yaml);
-    webhooksSkipped = removeDraftWebhooks(document);
-    return document;
-  });
+  const { relativePath, result } = loadDraft(plan, args.path, () => parseYaml(args.yaml));
   const file = projectFile(plan, relativePath);
   const existing = existingFileInfo(plan, relativePath);
 
@@ -404,6 +478,7 @@ export async function validateEventDraft(plan: PlanSnapshot, args: { path: strin
           message: `The file path does not match spec.paths.events.template '${plan.eventsTemplate}' (relative to ${plan.eventsRoot || "the project root"}), so opentp would not load it`,
         },
       ],
+      warnings: [] as ErrorEntry[],
     };
   }
   if (result.status === "failed") {
@@ -412,11 +487,12 @@ export async function validateEventDraft(plan: PlanSnapshot, args: { path: strin
       file,
       ...existing,
       errors: [{ path: result.issue.path, message: result.issue.message }],
+      warnings: [] as ErrorEntry[],
     };
   }
 
   const event = result.event;
-  const { errors, planProblems } = await checkDraft(plan, event);
+  const { errors, warnings, planProblems, skippedWebhooks } = await checkDraft(plan, event, true);
   return {
     valid: errors.length === 0,
     file,
@@ -425,9 +501,12 @@ export async function validateEventDraft(plan: PlanSnapshot, args: { path: strin
     taxonomy: event.taxonomy,
     ...existing,
     errors,
-    ...(webhooksSkipped > 0
+    warnings,
+    ...(skippedWebhooks.length > 0
       ? {
-          note: `${webhooksSkipped} webhook check(s) defined in the draft were not run (a draft must not trigger requests); checks from opentp.yaml ran`,
+          note: skippedWebhooks
+            .map((id) => `webhook binding '${id}' was not run for a draft`)
+            .join("; "),
         }
       : {}),
     ...(planProblems > 0
@@ -444,7 +523,9 @@ export async function validateEventDraft(plan: PlanSnapshot, args: { path: strin
 
 export async function validatePlan(plan: PlanSnapshot, args: { files?: string[]; limit?: number }) {
   const limit = args.limit ?? DEFAULT_ERROR_LIMIT;
-  const errors = await plan.validation();
+  const results = await plan.validation();
+  const errors = errorsOnly(results);
+  const allWarnings = warningsOnly(results);
   const requested = (args.files ?? []).map((file) => {
     const relativePath = plan.eventsRelativePath(file);
     checkRelativePath(relativePath);
@@ -452,10 +533,12 @@ export async function validatePlan(plan: PlanSnapshot, args: { files?: string[];
   });
 
   let selected = errors;
+  let warnings = allWarnings;
   let files: Array<{ file: string; status: string; reason?: string; errorCount: number }> = [];
   if (requested.length > 0) {
     const wanted = new Set(requested);
     selected = errors.filter((error) => wanted.has(error.event));
+    warnings = allWarnings.filter((warning) => wanted.has(warning.event));
     files = [...wanted].map((relativePath) => ({
       file: projectFile(plan, relativePath),
       ...fileStatus(plan, relativePath),
@@ -478,6 +561,14 @@ export async function validatePlan(plan: PlanSnapshot, args: { files?: string[];
       .slice(0, limit)
       .map(({ event, path: errorPath, message }) => ({ file: event, path: errorPath, message })),
     ...(selected.length > limit ? { truncated: true } : {}),
+    warningCount: warnings.length,
+    warnings: warnings.slice(0, limit).map(({ event, path: warningPath, message, rule }) => ({
+      file: event,
+      path: warningPath,
+      message,
+      ...(rule ? { rule } : {}),
+    })),
+    ...(warnings.length > limit ? { warningsTruncated: true } : {}),
   };
 }
 
@@ -552,7 +643,7 @@ export async function suggestEvent(plan: PlanSnapshot, args: { taxonomy: Taxonom
   }
   const document = {
     opentp: config.opentp,
-    event: { key: "", taxonomy: fileTaxonomy, payload: { schema: {} } },
+    event: { key: "", taxonomy: fileTaxonomy, payload: skeletonPayload(plan) },
   };
 
   let key: string | null = null;
@@ -564,7 +655,7 @@ export async function suggestEvent(plan: PlanSnapshot, args: { taxonomy: Taxonom
       key = result.event.expectedKey;
       if (!keygenConfigured) {
         keyNote =
-          "Key generation is not configured or not usable (spec.events.x-opentp.keygen): choose a key that follows spec.events.key";
+          "Key generation is not configured or not usable (keygen in opentp.cli.yaml): choose a key that follows spec.events.key";
       } else if (result.event.keygenError) {
         keyNote = `The key could not be generated: ${result.event.keygenError}`;
       }
@@ -579,16 +670,7 @@ export async function suggestEvent(plan: PlanSnapshot, args: { taxonomy: Taxonom
 
   const existing = relativePath !== null ? fileStatus(plan, relativePath) : undefined;
   const keyOwner = key !== null ? plan.byKey.get(key) : undefined;
-  const requiredPayloadFields = Object.entries(config.spec.events.payload.schema ?? {})
-    .filter(([, field]) => isYamlMapping(field) && field.required === true)
-    .map(([name, field]) => ({
-      name,
-      type: field.type ?? null,
-      needsValue: field.valueRequired === true,
-      ...(field.title ? { title: field.title } : {}),
-      ...(field.enum ? { enum: field.enum } : {}),
-      ...(field.dict ? { dict: field.dict } : {}),
-    }));
+  const requiredPayloadFields = payloadFieldRequirements(plan);
 
   return {
     file: relativePath === null ? null : projectFile(plan, relativePath),
@@ -611,12 +693,151 @@ export async function suggestEvent(plan: PlanSnapshot, args: { taxonomy: Taxonom
   };
 }
 
+/** What the skeleton writes for a field that the event still has to fill in */
+export const SKELETON_PLACEHOLDER = "<...>";
+
+/**
+ * What an event must write for a field with a policy on one target: `{}` for specified (or when a
+ * base layer after the policy already narrows or fixes it), `enum: [<...>]` for restricted,
+ * `value: <...>` for fixed (the base value when a base layer already wrote one, since a fixed value
+ * cannot change). An array field gets `value: [<...>]` for both: a top-level `enum` or `dict` is
+ * not allowed on an array, so a fixed value is the only way to restrict it.
+ */
+function skeletonField(base: BaseField): Record<string, unknown> {
+  const needsValue = base.policy === "fixed" && !base.fixedAfterPolicy;
+  const needsRestriction = base.policy === "restricted" && !base.restrictedAfterPolicy;
+  if (!needsValue && !needsRestriction) return {};
+  if (base.field.value !== undefined) return { value: base.field.value };
+  if (base.field.type === "array") return { value: [SKELETON_PLACEHOLDER] };
+  return needsValue ? { value: SKELETON_PLACEHOLDER } : { enum: [SKELETON_PLACEHOLDER] };
+}
+
+/**
+ * The payload of the suggest_event skeleton: every field with a policy (catalog and common fields).
+ * One implicit payload when every listed field can be written the same way on every target (a
+ * field usable there, and a placeholder only where the base layers do not restrict it already);
+ * otherwise one payload per target id with that target's fields.
+ */
+function skeletonPayload(plan: PlanSnapshot): Record<string, unknown> {
+  const targets = targetIds(plan.config);
+  const bases = new Map(targets.map((target) => [target, mergeBaseLayers(plan.config, target)]));
+  const perTarget = new Map<string, Record<string, Record<string, unknown>>>();
+  for (const target of targets) {
+    const schema: Record<string, Record<string, unknown>> = {};
+    for (const [name, base] of bases.get(target)?.fields ?? []) {
+      if (base.policy !== undefined) setOwn(schema, name, skeletonField(base));
+    }
+    perTarget.set(target, schema);
+  }
+
+  const shared: Record<string, Record<string, unknown>> = {};
+  const names = [...new Set([...perTarget.values()].flatMap((schema) => Object.keys(schema)))];
+  const sameText = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const sharable = names.every((name) => {
+    const written = targets
+      .map((target) => perTarget.get(target)?.[name])
+      .filter((entry): entry is Record<string, unknown> => entry !== undefined);
+    const entry = written[0] ?? {};
+    if (!written.every((other) => sameText(other, entry))) return false;
+    const usable = targets.every((target) => {
+      if (perTarget.get(target)?.[name] !== undefined) return true;
+      const base = bases.get(target)?.fields.get(name);
+      if (base === undefined) return false;
+      const { field } = base;
+      const restricted =
+        field.value !== undefined || field.enum !== undefined || field.dict !== undefined;
+      return Object.keys(entry).length === 0 || !restricted;
+    });
+    if (usable) setOwn(shared, name, entry);
+    return usable;
+  });
+  if (sharable) return { schema: shared };
+  return Object.fromEntries(targets.map((target) => [target, { schema: perTarget.get(target) }]));
+}
+
+/**
+ * Catalog and common fields that events must write (a `policy`) or that are required common fields,
+ * with the targets they apply to
+ */
+function payloadFieldRequirements(plan: PlanSnapshot) {
+  const fields = new Map<
+    string,
+    {
+      name: string;
+      type: string | null;
+      targets: string[];
+      policy?: string;
+      required?: true;
+      title?: string;
+      enum?: unknown[];
+      dict?: string;
+    }
+  >();
+  for (const target of targetIds(plan.config)) {
+    for (const [name, base] of mergeBaseLayers(plan.config, target).fields) {
+      const required = base.common && base.field.required === true;
+      if (base.policy === undefined && !required) continue;
+      const known = fields.get(name);
+      if (known) {
+        known.targets.push(target);
+        continue;
+      }
+      const { field } = base;
+      fields.set(name, {
+        name,
+        type: field.type ?? null,
+        targets: [target],
+        ...(base.policy ? { policy: base.policy } : {}),
+        ...(required ? { required: true as const } : {}),
+        ...(field.title ? { title: field.title } : {}),
+        ...(Array.isArray(field.enum) ? { enum: field.enum } : {}),
+        ...(typeof field.dict === "string" ? { dict: field.dict } : {}),
+      });
+    }
+  }
+  return [...fields.values()];
+}
+
 // --- generate ------------------------------------------------------------------------------------
 
-export async function generate(
-  plan: PlanSnapshot,
-  args: { generator: "json" | "yaml"; keys?: string[] },
-) {
+export interface GenerateArgs {
+  /** A built-in export generator */
+  generator?: "json" | "yaml";
+  /** Index of a generate.run entry of opentp.cli.yaml: its generator, target, events and file */
+  run?: number;
+  /** Only these event keys */
+  keys?: string[];
+}
+
+/**
+ * The generator, options and events of a generate.run entry (its output is never written; its
+ * template file must be inside the directory of opentp.cli.yaml)
+ */
+function runEntry(plan: PlanSnapshot, index: number) {
+  const entries = plan.cli?.config.generate?.run ?? [];
+  const entry = entries[index];
+  if (entry === undefined || plan.cli === null) {
+    throw new ToolError(
+      entries.length === 0
+        ? "opentp.cli.yaml has no generate.run entries: pass generator instead"
+        : `No generate.run entry ${index}: opentp.cli.yaml has ${entries.length} (0 to ${entries.length - 1})`,
+    );
+  }
+  const problems = getRunEntryProblems(entry, index, plan.cli.dir, plan.config, {
+    output: false,
+    generator: false,
+  });
+  if (problems.length > 0) {
+    throw new ToolError(`opentp.cli.yaml: ${problems.join("; ")}`);
+  }
+  const options: GeneratorOptions = {
+    ...(entry.file !== undefined ? { file: resolveCliPath(plan.cli, entry.file) } : {}),
+    ...(entry.pretty !== undefined ? { pretty: entry.pretty } : {}),
+  };
+  return { entry, options, events: filterEvents(plan.events, plan.config, entry) };
+}
+
+export async function generate(plan: PlanSnapshot, args: GenerateArgs) {
   const problems = loadProblems(plan);
   if (problems.length > 0) {
     throw new ToolError(
@@ -624,29 +845,91 @@ export async function generate(
     );
   }
 
+  let name: string;
+  let options: GeneratorOptions = {};
   let events = plan.events;
+  let entryOutput: string | undefined;
+  if (args.run !== undefined) {
+    const selected = runEntry(plan, args.run);
+    if (args.generator !== undefined && args.generator !== selected.entry.generator) {
+      throw new ToolError(
+        `generate.run[${args.run}] uses the ${selected.entry.generator} generator, not ${args.generator}: pass only run`,
+      );
+    }
+    name = selected.entry.generator;
+    options = selected.options;
+    events = selected.events;
+    entryOutput = selected.entry.output;
+  } else if (args.generator !== undefined) {
+    name = args.generator;
+  } else {
+    throw new ToolError(
+      "Pass generator (json or yaml) or run (the index of a generate.run entry in opentp.cli.yaml)",
+    );
+  }
+
   if (args.keys && args.keys.length > 0) {
     const unknown = args.keys.filter((key) => !plan.byKey.has(key));
     if (unknown.length > 0) {
       throw new ToolError(`Unknown event keys: ${unknown.join(", ")}`);
     }
+    const selected = new Set(events);
+    const outside = args.keys.filter((key) => !selected.has(plan.byKey.get(key) as ResolvedEvent));
+    if (outside.length > 0) {
+      throw new ToolError(
+        `Not selected by generate.run[${args.run}] (target, events): ${outside.join(", ")}`,
+      );
+    }
     events = args.keys.map((key) => plan.byKey.get(key) as ResolvedEvent);
   }
 
-  const generator = getGenerator(args.generator);
-  if (!generator) throw new ToolError(`Unknown generator '${args.generator}'`);
-  const result = await generator.generate({
-    config: plan.config,
-    events,
-    dictionaries: plan.dictionaries,
-    options: {},
-  });
+  const generator = getGenerator(name);
+  if (!generator) {
+    throw new ToolError(
+      `Unknown generator '${name}'${args.run !== undefined ? " (opentp mcp does not load generate.plugins)" : ""}`,
+    );
+  }
+  let result: Awaited<ReturnType<typeof generator.generate>>;
+  try {
+    // No output option: generators return the text, and nothing is written
+    result = await generator.generate(
+      generatorContext({
+        config: plan.config,
+        events,
+        dictionaries: plan.dictionaries,
+        options,
+        tracker: plan.tracker,
+        cliConfig: plan.cli?.config ?? null,
+      }),
+    );
+  } catch (error) {
+    throw new ToolError(
+      `The ${name} generator failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (result.stdout === undefined && (result.files?.length ?? 0) > 0) {
+    throw new ToolError(
+      `The ${name} generator writes files instead of returning text, and opentp mcp never writes files: run 'opentp generate' in a terminal`,
+    );
+  }
   const output = result.stdout ?? "";
   const bytes = Buffer.byteLength(output, "utf8");
   if (bytes > MAX_RESPONSE_BYTES) {
     throw new ToolError(
-      `The ${args.generator} export is ${Math.ceil(bytes / 1024)} KB, more than the ${MAX_RESPONSE_BYTES / 1024} KB limit for one response: pass keys to export only some events, or run 'opentp generate ${args.generator}' in a terminal`,
+      `The ${name} export is ${Math.ceil(bytes / 1024)} KB, more than the ${MAX_RESPONSE_BYTES / 1024} KB limit for one response: pass keys to export only some events, or run 'opentp generate${args.run === undefined ? ` ${name}` : ""}' in a terminal`,
     );
   }
-  return { generator: args.generator, eventCount: events.length, bytes, output };
+  return {
+    generator: name,
+    ...(args.run !== undefined
+      ? {
+          run: args.run,
+          entryOutput,
+          note: "Returned as text, not written: run 'opentp generate' to write the output file",
+        }
+      : {}),
+    eventCount: events.length,
+    bytes,
+    output,
+  };
 }

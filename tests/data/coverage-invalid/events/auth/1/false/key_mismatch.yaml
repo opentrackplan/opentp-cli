@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::key_mismatch__WRONG::p1::internal-false

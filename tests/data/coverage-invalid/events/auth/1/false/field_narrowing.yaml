@@ -1,0 +1,31 @@
+opentp: 2026-09
+
+event:
+  key: auth::field_narrowing::p1::internal-false
+
+  taxonomy:
+    action: Event values, enums and item enums outside the catalog enum or dictionary
+    action_detail: "test::narrowing"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: field_narrowing
+        event_category:
+          value: auth
+        # Catalog enum [email, google]
+        sign_in_method:
+          value: github
+        # Catalog dict governance/pii-owners
+        owner_team:
+          value: nobody
+        # Catalog items.enum [a, b, c]
+        tags:
+          items:
+            enum: [a, z]
+        # Catalog enum [US, DEU]; the catalog example (FRA) is dropped, not reported
+        country_code:
+          enum: [US, CA]

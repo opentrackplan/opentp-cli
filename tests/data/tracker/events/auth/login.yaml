@@ -1,0 +1,14 @@
+opentp: 2026-09
+
+event:
+  key: auth::login
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_name:
+        value: login
+      auth_method:
+        enum: [email, google]
+      dimension_1: {}

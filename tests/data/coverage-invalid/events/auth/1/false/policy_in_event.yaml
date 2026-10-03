@@ -1,0 +1,22 @@
+opentp: 2026-09
+
+event:
+  key: auth::policy_in_event::p1::internal-false
+
+  # policy written in an event is never ignorable
+  ignore:
+    - path: payload.event_category
+
+  taxonomy:
+    action: policy belongs to the catalog and common fields in opentp.yaml
+    action_detail: "test::policy"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: policy_in_event
+      event_category:
+        value: auth
+        policy: fixed

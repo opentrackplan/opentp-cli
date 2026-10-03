@@ -1,0 +1,10 @@
+opentp: 2026-01
+
+# A dictionary that was not migrated to 2026-09
+dict:
+  type: string
+  x-opentp:
+    role: attribute
+  values:
+    - one
+    - two

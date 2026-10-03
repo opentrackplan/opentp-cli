@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+opentp: 2026-09
+
+keygen:
+  template: "{area | slug}::{event | slug}::{verb | slug}::{object | slug}::p{priority_level}::internal-{is_internal}"
+  transforms:
+    slug:
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
+
+checks:
+  bindings:
+    snake-case-name:
+      rule: pattern
+      params: "^[a-z_]+$"

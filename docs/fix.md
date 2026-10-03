@@ -1,13 +1,13 @@
 ---
 title: fix
-description: Auto-fix event keys based on taxonomy values.
+description: Rewrite event keys from the key generator in opentp.cli.yaml.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 # opentp fix
 
-Automatically fixes event keys based on taxonomy values and the configured key generator (`spec.events.x-opentp.keygen`).
+Rewrites every `event.key` that differs from the key generated from the event's taxonomy values by `keygen` in [`opentp.cli.yaml`](/cli/config#keygen), then validates the plan.
 
 ## Usage
 
@@ -20,79 +20,94 @@ opentp fix [options]
 | Option | Description |
 |--------|-------------|
 | `--root <path>`, `-r <path>` | Project root directory |
+| `--cli-config <path>` | The `opentp.cli.yaml` to use (default: the one in the project root) |
 | `--verbose`, `-v` | Debug logs (on stderr) |
 | `--json` | Print the validation result as one JSON document on stdout |
-| `--external-transforms <dir>` | Load custom transforms (repeatable) |
-| `--external-rules <dir>` | Load custom validation checks for the validation that follows (repeatable) |
+| `--fail-on <rule>[,<rule>...]` | Report these tool rules as errors in the validation that follows: `overlap`, `unknownCheck` |
+| `--allow-plugins` | Load the plugins named in `opentp.cli.yaml` (`keygen.plugins`, `checks.plugins`) |
+| `--external-transforms <dir>` | Load custom transform steps (repeatable) |
+| `--external-rules <dir>` | Load custom checks for the validation that follows (repeatable) |
 
 `opentp validate --fix` (or `-f`) is the same as `opentp fix`. `--external-*` directories are resolved against the current directory.
 
-## Examples
+## Example
 
-### Fix all events
-
-```bash
-opentp fix
-```
-
-Output (log lines, on stderr):
-
-```
-Fixed event key file="auth/2/false/ignored_application_id_dict.yaml"
-Fixed event key file="auth/3/false/login_experiment.yaml"
-Events fixed count=2
-✓ All events are valid count=4
-```
-
-After rewriting keys, `fix` validates the plan like `opentp validate`, and the exit code comes from that validation (`0` or `1`). With `--json`, stdout holds only the validation JSON document; the `Fixed event key` lines stay on stderr.
-
-`fix` exits with code `2` and changes nothing when `spec.events.x-opentp.keygen` is not configured, when `opentp.yaml` is missing or cannot be loaded, or when the arguments are invalid. When `opentp.yaml` has configuration problems (for example an unknown transform step in a keygen pipeline), no key is rewritten, and the problems are reported by the validation (exit code `1`).
-
-## How It Works
-
-1. Reads each event file
-2. Extracts taxonomy values (area, event, etc.)
-3. Applies `spec.events.x-opentp.keygen.template` + transforms to generate the expected key
-4. If the current key doesn't match, updates the file
-
-### Example
-
-Given this configuration:
+Given `keygen` in `opentp.cli.yaml`:
 
 ```yaml
-# opentp.yaml
-spec:
-  events:
-    x-opentp:
-      keygen:
-        template: "{area | slug}::{event | slug}"
-        transforms:
-          slug:
-            - lower
-            - replace:
-                from: " "
-                to: "_"
+# opentp.cli.yaml
+opentp: 2026-09
+
+keygen:
+  template: "{area | slug}::{event | slug}"
+  transforms:
+    slug:
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
 ```
 
-And this event:
+and an event with a wrong key:
 
 ```yaml
-# events/auth/login_button_click.yaml
+# events/auth/login_click.yaml
+opentp: 2026-09
+
 event:
-  key: wrong_key  # incorrect
+  key: wrong_key
+
   taxonomy:
-    action: User clicks login button
+    action: User clicks the login button
+
+  payload:
+    schema:
+      event_name:
+        value: login_click
 ```
 
-Running `opentp fix` will update the key to:
+`opentp fix` prints (log lines, on stderr):
+
+```
+Fixed event key file="auth/login_click.yaml"
+Events fixed count=1
+✓ All events are valid count=1
+```
+
+and only the key changes in the event file:
 
 ```yaml
+# events/auth/login_click.yaml
+opentp: 2026-09
+
 event:
-  key: auth::login_button_click  # fixed
+  key: auth::login_click
+
+  taxonomy:
+    action: User clicks the login button
+
+  payload:
+    schema:
+      event_name:
+        value: login_click
 ```
 
-## Notes
+The generated key comes from the template: `{area | slug}` takes the `area` value (`auth`, from the file path `auth/login_click.yaml`) through the `slug` pipeline, and `{event | slug}` does the same with `login_click`. See the [template grammar](/cli/config#template-grammar).
 
-- Only the `key` field is modified; other fields remain unchanged
-- Original file formatting is preserved as much as possible
-- Run `opentp validate` after fixing to verify changes
+## How it works
+
+1. Loads the plan and `opentp.cli.yaml`, like `opentp validate`.
+2. Generates the expected key of every event from its taxonomy values (from the file path, `event.taxonomy` and composite fragments).
+3. Rewrites the files whose `event.key` differs.
+4. Validates the whole plan; the exit code comes from that validation (`0` or `1`). With `--json`, stdout holds only the validation JSON document; the `Fixed event key` lines stay on stderr.
+
+**Only `event.key` changes.** `fix` finds the key's scalar in the YAML document and replaces its text; every other byte of the file stays as it was: comments (including a `# yaml-language-server` line), blank lines, quoting, indentation, line endings and key order (payload versions keyed `"2"` before `"1"` keep that order, so the [overlap](/cli/validate#overlapping-events) direction does not change). The key keeps its quoting style; a plain key that would not read back as the same string (for example `123`, `true`, or a key with ` #`) is written in double quotes. A file whose key cannot be changed alone is skipped with a warning (`⚠ Event key was not fixed: event.key cannot be changed alone in this file (edit it by hand)`, with the file and the reason) and the validation that follows reports its key: for example when `event` or `event.key` is an alias, or the key carries an anchor that an alias repeats. Events whose key cannot be generated (a taxonomy value is missing) are listed and left unchanged; `ignore` entries are not consulted, so an event that ignores `event.key` is rewritten too.
+
+## When fix changes nothing
+
+- **Exit code `2`**, nothing written: `keygen` is not configured in `opentp.cli.yaml` (`fix needs keygen in opentp.cli.yaml`), `opentp.yaml` or `opentp.cli.yaml` cannot be loaded, the arguments are invalid, or the project is an application repository (`fix edits the plan repository; run it there (opentp.cli.yaml has plan:)`).
+- **Exit code `1`**, nothing written: `opentp.yaml` has configuration problems, or the `keygen` or `tracker` settings of `opentp.cli.yaml` have problems (for example an unknown transform step). A log line says why (`Event keys were not fixed: keygen in opentp.cli.yaml has problems`), and the validation that follows reports the problems.
+
+When the keygen pipelines use custom steps, pass `--allow-plugins` (for `keygen.plugins`) or `--external-transforms`; without them the steps are unknown and no key is rewritten.

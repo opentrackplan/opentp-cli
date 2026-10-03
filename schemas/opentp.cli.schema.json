@@ -1,0 +1,405 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://opentp.dev/schemas/cli/opentp.cli.schema.json",
+  "title": "opentp.cli.yaml",
+  "description": "Settings of the OpenTrackPlan reference CLI (opentp): key generation, check bindings and plugins, generator runs, MCP tools. Not part of the OpenTrackPlan format.",
+  "type": "object",
+  "properties": {
+    "opentp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+      "description": "Must equal the plan's opentp"
+    },
+    "cli": {
+      "description": "npm semver range of opentp versions that may run this plan, e.g. '>=0.10 <0.11'",
+      "type": "string",
+      "minLength": 1
+    },
+    "plan": {
+      "description": "Application repository mode (no opentp.yaml next to this file): the tracking plan, a directory relative to this file or a git URL with a tag or commit SHA (git+ssh://, git+https:// or git+file://, e.g. git+ssh://git@example.com/acme/tracking-plan.git#v1.0.0)",
+      "type": "string",
+      "minLength": 1
+    },
+    "keygen": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key template, e.g. '{area | slug}::{event | slug}'"
+        },
+        "transforms": {
+          "description": "Named pipelines of transform steps",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          }
+        },
+        "plugins": {
+          "description": "Directories with custom transform steps (loaded only with --allow-plugins)",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "plugins": {
+          "description": "Directories with custom checks (loaded only with --allow-plugins)",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "bindings": {
+          "description": "Check ids the plan refers to: webhooks, or rules with default params",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "webhook": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Webhook URL; it and the headers may read environment variables listed in OPENTP_WEBHOOK_ENV"
+                      },
+                      "method": {
+                        "type": "string",
+                        "enum": [
+                          "GET",
+                          "POST",
+                          "PUT"
+                        ]
+                      },
+                      "headers": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "timeout": {
+                        "description": "Request timeout in ms (default 5000)",
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "retries": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "cache": {
+                        "description": "Cache TTL in ms (default 0: no cache)",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "webhook"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "rule": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A built-in or plugin rule"
+                  },
+                  "params": {
+                    "description": "Params used when the plan writes `<id>: true`"
+                  }
+                },
+                "required": [
+                  "rule"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "severity": {
+          "description": "Severity of the tool rules (default: warning)",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "overlap",
+              "unknownCheck"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "off",
+              "warning",
+              "error"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "tracker": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "snowplow",
+            "ga4",
+            "amplitude",
+            "segment",
+            "generic"
+          ]
+        },
+        "event": {
+          "description": "snowplow only: Iglu URI of the event schema",
+          "type": "string",
+          "minLength": 1
+        },
+        "contexts": {
+          "description": "snowplow only: context schemas by alias",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "map": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Field name or glob ('*') -> path in the tracker payload; a path that ends at a container gets the field name as its leaf"
+        },
+        "setBy": {
+          "type": "object",
+          "properties": {
+            "app": {
+              "description": "Fields (names or globs) set once by the application, not passed per call",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "tracker": {
+              "description": "Fields (names or globs) filled by the tracker or the collector",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "description": "Fields that generated code does not take per call"
+        },
+        "targets": {
+          "description": "Overrides per target id (spec.events.payload.targets.all)",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "map": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Field name or glob ('*') -> path in the tracker payload; a path that ends at a container gets the field name as its leaf"
+              },
+              "contexts": {
+                "description": "snowplow only: context schemas by alias on this target",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "description": "Tracker binding: where each plan field travels inside the tracker payload (used by generators)"
+    },
+    "generate": {
+      "type": "object",
+      "properties": {
+        "plugins": {
+          "description": "Directories with custom generators (loaded only with --allow-plugins)",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "run": {
+          "description": "What 'opentp generate' without a generator name runs, in order",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "generator": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Output file, relative to this file's directory"
+              },
+              "file": {
+                "description": "Template file (template generator), relative to this file",
+                "type": "string",
+                "minLength": 1
+              },
+              "pretty": {
+                "type": "boolean"
+              },
+              "target": {
+                "description": "Only events whose payload covers this target",
+                "type": "string",
+                "minLength": 1
+              },
+              "events": {
+                "description": "Only events whose taxonomy matches every listed field (a value or a list)",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    },
+                    {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "generator",
+              "output"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcp": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "description": "Tool groups to serve (default: all four); at least one",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "describe",
+              "search",
+              "validate",
+              "generate"
+            ]
+          }
+        },
+        "write": {
+          "description": "Reserved for write tools, which are not supported yet: only false is accepted",
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "opentp"
+  ],
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": {}
+  }
+}

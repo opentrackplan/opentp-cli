@@ -1,10 +1,13 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::ignored_application_id_dict::view::legacy_app::p2::internal-false
 
   ignore:
     - path: payload.all.1.0.0.schema.application_id.value
+    # Every iOS event must list device_model (policy: specified); `payload.<field>` names a field
+    - path: payload.device_model
+      reason: The legacy app sends no device model
 
   taxonomy:
     action: User views a legacy app event

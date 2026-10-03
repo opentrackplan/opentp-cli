@@ -1,0 +1,62 @@
+opentp: 2026-09
+
+info:
+  title: Tracker Binding Fixture
+  version: 1.0.0
+  description: A valid plan with a Snowplow tracker binding in opentp.cli.yaml
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+
+  events:
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        enum: [auth, onboarding]
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+
+    payload:
+      targets:
+        all: [web, ios, android]
+        mobile: [ios, android]
+      # Field catalog: the fields events may use
+      schema:
+        dimension_1:
+          type: string
+          title: Organization type
+        dimension_2:
+          type: string
+          title: Experiment group
+        auth_method:
+          type: string
+          enum: [email, google, github]
+        device_is_webview:
+          type: boolean
+        step_index:
+          type: integer
+
+  # Common fields: part of every event on a target
+  targets:
+    all:
+      schema:
+        application_id:
+          type: string
+        event_name:
+          type: string
+          policy: fixed
+        platform:
+          type: string
+        user_id:
+          type: string
+    ios:
+      schema:
+        os_version:
+          type: string

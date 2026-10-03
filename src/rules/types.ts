@@ -45,18 +45,21 @@ export interface RuleDefinition {
 }
 
 /**
- * Field definition in spec or event
+ * Field definition in spec or event (legacy subset of the Field type; `valueRequired` and
+ * `x-opentp` were removed in 2026-09)
  */
 export interface FieldDefinition {
   name?: string;
   title?: string;
   description?: string;
   example?: unknown;
-  type?: "string" | "number" | "boolean";
+  type?: "string" | "number" | "integer" | "boolean" | "array";
   enum?: unknown[];
   dict?: string;
   value?: unknown;
   required?: boolean;
+  /** Catalog and common fields only */
+  policy?: "specified" | "restricted" | "fixed";
   checks?: Record<string, unknown>;
 }
 

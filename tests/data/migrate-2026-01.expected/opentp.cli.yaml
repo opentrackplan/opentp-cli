@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+opentp: 2026-09
+cli: ">=0.10 <0.11"
+
+keygen:
+  template: '{area | slug}::{event | slug}'
+  transforms:
+    slug:
+      - lower
+      - to-underscore   # spaces and dashes become _
+
+checks:
+  bindings:
+    webhook-1:
+      webhook:
+        url: https://example.com/hooks/field
+        timeout: 2000
+    webhook-2:
+      webhook: { url: "https://example.com/hooks/ticket", method: POST }

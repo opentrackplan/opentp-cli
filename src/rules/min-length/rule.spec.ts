@@ -35,4 +35,13 @@ describe("min-length rule", () => {
     const result = await minLength.validate("", 0, ctx);
     expect(result.valid).toBe(true);
   });
+
+  it("counts Unicode code points, not UTF-16 code units", async () => {
+    // Two emoji are 2 code points (4 UTF-16 code units)
+    expect((await minLength.validate("😀😀", 3, ctx)).valid).toBe(false);
+    expect(await minLength.validate("😀😀", 3, ctx)).toMatchObject({
+      error: "Length 2 is less than minimum 3",
+    });
+    expect((await minLength.validate("日本", 2, ctx)).valid).toBe(true);
+  });
 });

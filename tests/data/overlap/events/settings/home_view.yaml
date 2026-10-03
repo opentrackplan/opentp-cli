@@ -1,0 +1,15 @@
+opentp: 2026-09
+
+event:
+  key: settings::home_view
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_category:
+        value: settings
+      event_name:
+        value: view
+      screen:
+        value: home

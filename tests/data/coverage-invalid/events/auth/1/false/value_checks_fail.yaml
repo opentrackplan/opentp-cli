@@ -1,0 +1,45 @@
+opentp: 2026-09
+
+event:
+  key: auth::value_checks_fail::p1::internal-false
+
+  taxonomy:
+    action: Fixed values that fail a portable check, a format and a bound rule
+    action_detail: "test::checks"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: value_checks_fail
+        event_category:
+          value: auth
+        # spec.checks.ticket-key: "^[A-Z]+-[0-9]+$"
+        ticket_id:
+          value: ticket 7
+        # format: email
+        user_email:
+          value: not-an-email
+        # short-name binds max-length with params 5 (opentp.cli.yaml)
+        screen_name:
+          value: settings_screen
+    ios:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: value_checks_fail
+        event_category:
+          value: auth
+        # Plan params other than true replace the binding's params: max-length 20 passes
+        screen_name:
+          value: settings_screen
+          checks:
+            short-name: 20
+        # A portable check takes true or false, nothing else
+        ticket_id:
+          value: TICKET-7
+          checks:
+            ticket-key: { strict: true }

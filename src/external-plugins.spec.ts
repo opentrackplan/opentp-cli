@@ -156,6 +156,7 @@ describe("loadExternalGenerators", () => {
       events: [{ key: "a::b" }, { key: "c::d" }] as never,
       dictionaries: new Map(),
       options: {},
+      effective: () => ({}),
     };
     expect(await getGenerator(`keys-${id}`)?.generate(context)).toEqual({ stdout: "a::b\nc::d" });
     expect(await getGenerator(`count-${id}`)?.generate(context)).toEqual({ stdout: "2" });

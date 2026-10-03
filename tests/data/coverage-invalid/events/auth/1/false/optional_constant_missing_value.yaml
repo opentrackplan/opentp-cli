@@ -1,10 +1,10 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::optional_constant_missing_value::p1::internal-false
 
   taxonomy:
-    action: Optional constant is defined without a fixed value
+    action: The event still writes x-opentp, which was removed in 2026-09
     action_detail: "test::payload"
 
   payload:
@@ -17,3 +17,6 @@ event:
         value: auth
       build_variant:
         type: string
+        # Implicit `all` covers web, ios and android, but the error is reported once per file
+        x-opentp:
+          role: constant

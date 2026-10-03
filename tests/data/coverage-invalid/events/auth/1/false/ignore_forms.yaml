@@ -1,0 +1,41 @@
+opentp: 2026-09
+
+event:
+  key: auth::ignore_forms::p1::internal-false
+
+  ignore:
+    # payload.<field>: every field-level check of the field
+    - path: payload.sign_in_method
+    # payload.<...>.schema.<field>: the segment after the first .schema.
+    - path: payload.schema.screen_name
+    # payload.<field>.<keyword>: later segments are not interpreted
+    - path: payload.user_email.value
+    - path: payload::ticket_id
+    # Never ignorable: a changed fixed value and an unknown field
+    - path: payload.schema_version
+    - path: payload.unknown_field
+
+  taxonomy:
+    action: Every payload ignore form names one field
+    action_detail: "test::ignore"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: ignore_forms
+        event_category:
+          value: auth
+        sign_in_method:
+          value: github
+        screen_name:
+          value: settings_screen
+        user_email:
+          value: not-an-email
+        ticket_id:
+          value: bad ticket
+        schema_version:
+          value: 5
+        unknown_field: {}

@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::payload_selector_no_targets::p1::internal-false

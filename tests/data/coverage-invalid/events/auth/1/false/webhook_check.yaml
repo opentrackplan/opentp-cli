@@ -1,0 +1,20 @@
+opentp: 2026-09
+
+event:
+  key: auth::webhook_check::p1::internal-false
+
+  taxonomy:
+    action: A plan cannot define webhooks; they are bound in opentp.cli.yaml
+    action_detail: "test::checks"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: webhook_check
+        checks:
+          webhook:
+            url: https://checks.example.com/event-name
+      event_category:
+        value: auth

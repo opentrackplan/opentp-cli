@@ -1,4 +1,13 @@
+import type { CliConfig } from "../cliconfig/schema";
+import type { TrackerBinding } from "../cliconfig/tracker";
 import type { OpenTPConfig, ResolvedEvent } from "../types";
+import type { EffectivePayload } from "./effective";
+
+export type {
+  EffectivePayload,
+  EffectiveTargetPayload,
+  EffectiveVersion,
+} from "./effective";
 
 /**
  * Context passed to generators
@@ -12,6 +21,23 @@ export interface GeneratorContext {
   dictionaries: Map<string, (string | number | boolean)[]>;
   /** Generator-specific options from CLI */
   options: GeneratorOptions;
+  /**
+   * The tracker binding of opentp.cli.yaml resolved per target id: for every catalog and common
+   * field, its path in the tracker payload and who sets it (`setBy`). null or absent without a
+   * `tracker` section.
+   */
+  tracker?: TrackerBinding | null;
+  /**
+   * The opentp.cli.yaml settings in effect, read-only (in an application repository: merged with
+   * the plan repository's tracker and checks settings). null or absent without the file.
+   */
+  cliConfig?: Readonly<CliConfig> | null;
+  /**
+   * The 2026-09 effective payload of an event: per covered target and payload version, the common
+   * fields of the target plus the fields the version lists, merged over the catalog and the common
+   * fields like validation does it. `event.payload` stays the raw payload as written.
+   */
+  effective(event: ResolvedEvent): EffectivePayload;
 }
 
 /**

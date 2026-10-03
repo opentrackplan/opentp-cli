@@ -101,17 +101,59 @@ jobs:
             out="${out//$'\r'/}"
           }
 
+          # The summary is the last line; "count=" is always its last field ("✓ All events are valid
+          # count=N" without warnings, "... warnings=W count=N" with them)
           run validate --root tests/data/coverage-valid
           echo "$out"
-          if [ "$rc" -ne 0 ] || ! grep -Eq 'count=4$' <<<"$out"; then
-            echo "::error::coverage-valid: expected exit code 0 and 'count=4', got exit code ${rc}"
+          if [ "$rc" -ne 0 ] || ! grep -Eq 'All events are valid count=4$' <<<"$out"; then
+            echo "::error::coverage-valid: expected exit code 0 and 'All events are valid count=4' (no warnings), got exit code ${rc}"
             exit 1
           fi
 
           run validate --root tests/data/coverage-invalid
           echo "$out" | tail -n 3
-          if [ "$rc" -ne 1 ] || ! grep -q 'Validation failed' <<<"$out"; then
+          if [ "$rc" -ne 1 ] || ! grep -q 'Validation failed errorCount=' <<<"$out"; then
             echo "::error::coverage-invalid: expected exit code 1 and 'Validation failed', got exit code ${rc}"
+            exit 1
+          fi
+
+          # Overlapping events: 4 warnings, exit 0
+          run validate --root tests/data/overlap
+          echo "$out" | tail -n 1
+          if [ "$rc" -ne 0 ] || ! grep -Eq 'All events are valid warnings=4 count=12$' <<<"$out"; then
+            echo "::error::overlap: expected exit code 0 and 'All events are valid warnings=4 count=12', got exit code ${rc}"
+            exit 1
+          fi
+
+          # Application repository (plan: ../tracker in opentp.cli.yaml, no opentp.yaml)
+          run validate --root tests/data/application
+          echo "$out"
+          if [ "$rc" -ne 0 ] || ! grep -Eq 'All events are valid count=2$' <<<"$out"; then
+            echo "::error::application: expected exit code 0 and 'All events are valid count=2', got exit code ${rc}"
+            exit 1
+          fi
+
+          # opentp migrate writes files through a temporary file and a rename (Windows paths). On Windows
+          # the checkout has CRLF line endings, which migrate keeps, while the opentp.cli.yaml it creates
+          # uses LF: compare without trailing carriage returns.
+          plan="$RUNNER_TEMP/migrate-2026-01"
+          rm -rf "$plan"
+          cp -R tests/data/migrate-2026-01 "$plan"
+          run migrate --root "$plan"
+          echo "$out" | tail -n 4
+          if [ "$rc" -ne 0 ] || ! diff -r --strip-trailing-cr tests/data/migrate-2026-01.expected "$plan"; then
+            echo "::error::migrate: expected exit code 0 and the files of tests/data/migrate-2026-01.expected, got exit code ${rc}"
+            exit 1
+          fi
+          run validate --root "$plan"
+          echo "$out" | tail -n 1
+          if [ "$rc" -ne 0 ] || ! grep -Eq 'All events are valid warnings=1 count=3$' <<<"$out"; then
+            echo "::error::migrate: the migrated plan must validate ('All events are valid warnings=1 count=3'), got exit code ${rc}"
+            exit 1
+          fi
+          run migrate --root "$plan"
+          if [ "$rc" -ne 0 ] || ! grep -q 'Nothing to migrate' <<<"$out"; then
+            echo "::error::migrate: a second run must print 'Nothing to migrate' and exit 0, got exit code ${rc}"
             exit 1
           fi
 
@@ -125,7 +167,7 @@ jobs:
           run validate --json --root tests/data/coverage-invalid \
             --external-rules tests/data/coverage-invalid/external-rules
           if [ "$rc" -ne 1 ] || ! grep -q 'check throwing-check failed:' <<<"$out" \
-            || grep -q 'Unknown check: throwing-check' <<<"$out"; then
+            || grep -q "Unknown check 'throwing-check'" <<<"$out"; then
             echo "::error::--external-rules: the external rule was not loaded (exit code ${rc})"
             exit 1
           fi

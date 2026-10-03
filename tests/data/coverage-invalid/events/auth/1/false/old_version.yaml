@@ -1,0 +1,17 @@
+opentp: 2026-01
+
+event:
+  key: auth::old_version::p1::internal-false
+
+  taxonomy:
+    action: An event file that was not migrated to 2026-09
+    action_detail: "test::version"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: old_version
+      event_category:
+        value: auth

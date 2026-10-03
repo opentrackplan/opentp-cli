@@ -1,7 +1,13 @@
 import * as path from "node:path";
-import { SPEC_VERSION } from "../meta";
+import {
+  CHECK_ID_PATTERN,
+  invalidCheckIdMessage,
+  RESERVED_WEBHOOK_MESSAGE,
+  WEBHOOK_CHECK_ID,
+} from "../checks";
+import { SPEC_VERSION, VERSION } from "../meta";
 import { getStepProblem } from "../transforms";
-import type { OpenTPConfig } from "../types";
+import type { KeygenConfig, OpenTPConfig } from "../types";
 import {
   fileExists,
   getMatchTemplateProblems,
@@ -9,8 +15,23 @@ import {
   loadYaml,
   parsePattern,
 } from "../util";
+import { PORTABLE_CHECK_KEYWORDS } from "./constraints";
+import { walkConfigDocument } from "./document";
+import { analyzeBaseLayers } from "./fields";
 
 const CONFIG_FILENAMES = ["opentp.yaml", "opentp.yml"];
+
+/** The version a 2026-09 plan is migrated from with `opentp migrate` */
+export const PREVIOUS_SPEC_VERSION = "2026-01";
+
+/** Appended to the version error of an event or dictionary file that still says 2026-01 */
+export const MIGRATE_FILE_HINT = ' Run "opentp migrate" to upgrade it.';
+
+/**
+ * Appended instead in an application repository: migrate edits the plan repository and refuses to
+ * run there, so the application pins another plan ref
+ */
+export const PINNED_FILE_HINT = ` Pin a plan ref whose files are all on ${SPEC_VERSION}.`;
 
 /**
  * A problem in opentp.yaml itself. Reported once (as a validation error with event "opentp.yaml"),
@@ -19,6 +40,12 @@ const CONFIG_FILENAMES = ["opentp.yaml", "opentp.yml"];
 export interface ConfigIssue {
   path: string;
   message: string;
+  /**
+   * The file label of the problem when it is not the file that the list belongs to: in an
+   * application repository, `opentp.cli.yaml of the plan '<plan>'` for a tracker problem at a key
+   * that only the plan repository's opentp.cli.yaml has
+   */
+  file?: string;
 }
 
 /**
@@ -34,21 +61,72 @@ export function findConfigFile(rootPath: string): string | null {
   return null;
 }
 
+/** The message for a plan on the previous spec version (exit 2, before anything else) */
+export function previousVersionMessage(): string {
+  return `This plan uses OpenTrackPlan ${PREVIOUS_SPEC_VERSION}; opentp ${VERSION} reads ${SPEC_VERSION}. Run "opentp migrate" to upgrade it (or keep opentp 0.9.1: OPENTP_VERSION=0.9.1).`;
+}
+
 /**
- * Loads and validates opentp.yaml
+ * The message for a plan on the previous spec version that an application repository pins
+ * (`plan:` as written): the application cannot migrate it, it pins another ref
  */
-export function loadConfig(filePath: string): OpenTPConfig {
-  const config = loadYaml<OpenTPConfig>(filePath);
+export function pinnedPreviousVersionMessage(plan: string): string {
+  return `The pinned plan ${plan} uses OpenTrackPlan ${PREVIOUS_SPEC_VERSION}; opentp ${VERSION} reads ${SPEC_VERSION}. Pin a plan ref that is on ${SPEC_VERSION} (or keep opentp 0.9.1: OPENTP_VERSION=0.9.1).`;
+}
+
+export interface LoadConfigOptions {
+  /** Application repository mode: `plan:` as written (changes the 2026-01 guidance) */
+  pinnedPlan?: string;
+}
+
+/**
+ * The version error of an event or dictionary file whose own `opentp` differs from the plan's
+ * (with a hint when it is the previous version: migrate, or in an application repository
+ * (`pinnedPlan`) another plan ref)
+ */
+export function fileVersionMessage(
+  fileVersion: string,
+  planVersion: string,
+  pinnedPlan = false,
+): string {
+  const message = `Unsupported OpenTrackPlan schema version '${fileVersion}'. Expected '${planVersion}'.`;
+  if (fileVersion !== PREVIOUS_SPEC_VERSION || planVersion !== SPEC_VERSION) return message;
+  return `${message}${pinnedPlan ? PINNED_FILE_HINT : MIGRATE_FILE_HINT}`;
+}
+
+/**
+ * Loads and validates opentp.yaml. The version is checked first.
+ * @throws Error for a configuration that cannot be used at all (exit 2)
+ */
+export function loadConfig(filePath: string, options: LoadConfigOptions = {}): OpenTPConfig {
+  const directory = path.dirname(filePath);
+  if (CONFIG_FILENAMES.every((name) => fileExists(path.join(directory, name)))) {
+    throw new Error(`Both opentp.yaml and opentp.yml exist in ${directory}; keep one`);
+  }
+
+  const document = loadYaml<unknown>(filePath);
+  if (!isYamlMapping(document)) {
+    throw new Error("Expected a mapping with 'opentp', 'info' and 'spec'");
+  }
+  const config = document as unknown as OpenTPConfig;
 
   // Basic structure validation
   if (typeof config.opentp !== "string" || config.opentp.length === 0) {
     throw new Error("Missing required field: opentp");
   }
 
+  if (config.opentp === PREVIOUS_SPEC_VERSION && SPEC_VERSION !== PREVIOUS_SPEC_VERSION) {
+    throw new Error(
+      options.pinnedPlan === undefined
+        ? previousVersionMessage()
+        : pinnedPreviousVersionMessage(options.pinnedPlan),
+    );
+  }
+
   // Spec version format: YYYY-MM (valid month)
   if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(config.opentp)) {
     throw new Error(
-      `Invalid spec version '${config.opentp}'. Expected format YYYY-MM (e.g., 2026-01)`,
+      `Invalid spec version '${config.opentp}'. Expected format YYYY-MM (e.g., ${SPEC_VERSION})`,
     );
   }
 
@@ -111,20 +189,30 @@ export function loadConfig(filePath: string): OpenTPConfig {
     throw new Error("Missing required field: spec.events.payload.targets.all");
   }
 
-  if (!config.spec.events.payload.schema) {
-    throw new Error("Missing required field: spec.events.payload.schema");
-  }
-
   return config;
 }
 
 /**
  * Checks opentp.yaml for problems that loadConfig does not reject but that would otherwise be
- * reported once per event file, or never: unusable templates, invalid regexes, keygen problems and
- * inconsistent target ids. Does not throw.
+ * reported once per event file, or never: removed keywords, field definitions that are not
+ * mappings, unusable templates, invalid regexes, inconsistent target ids, broken portable checks,
+ * and the problems of the base layers (catalog, spec.targets.all, spec.targets.<T>) that do not
+ * need dictionaries (validateEvents reports the others). Does not throw.
  */
 export function validateConfig(config: OpenTPConfig): ConfigIssue[] {
   const issues: ConfigIssue[] = [];
+
+  // Removed keywords (x-opentp, valueRequired), payload field definitions that are not mappings,
+  // empty enums, conflicting value/enum/dict and invalid field regexes, where they are written
+  const walk = walkConfigDocument(config);
+  issues.push(...walk.issues);
+
+  // Check ids written on fields, items, taxonomy and pii settings (spec.checks ids: below)
+  for (const ref of walk.checks) {
+    if (!CHECK_ID_PATTERN.test(ref.id)) {
+      issues.push({ path: `${ref.path}.${ref.id}`, message: invalidCheckIdMessage(ref.id) });
+    }
+  }
 
   // Path template: every event file is matched against it
   for (const problem of getMatchTemplateProblems(config.spec.paths.events.template)) {
@@ -146,6 +234,7 @@ export function validateConfig(config: OpenTPConfig): ConfigIssue[] {
       }
 
       checkRegex(field.pattern, `${fieldPath}.pattern`, issues);
+      checkEnumAndDict(field, fieldPath, issues);
 
       if (field.template !== undefined) {
         for (const problem of getMatchTemplateProblems(field.template)) {
@@ -168,12 +257,11 @@ export function validateConfig(config: OpenTPConfig): ConfigIssue[] {
             continue;
           }
           checkRegex(fragment.pattern, `${fragPath}.pattern`, issues);
+          checkEnumAndDict(fragment, fragPath, issues);
         }
       }
     }
   }
-
-  issues.push(...getKeygenProblems(config));
 
   // Payload targets: groups may only contain ids from targets.all
   const targets: Record<string, unknown> = config.spec.events.payload.targets;
@@ -186,7 +274,15 @@ export function validateConfig(config: OpenTPConfig): ConfigIssue[] {
     });
   }
   if (Array.isArray(all)) {
-    for (const target of all) allTargets.add(String(target));
+    all.forEach((target, index) => {
+      const itemPath = `spec.events.payload.targets.all[${index}]`;
+      if (target === "") {
+        issues.push({ path: itemPath, message: "A target id must not be empty" });
+      } else if (allTargets.has(String(target))) {
+        issues.push({ path: itemPath, message: `Duplicate target id '${String(target)}'` });
+      }
+      allTargets.add(String(target));
+    });
   }
 
   for (const [group, members] of Object.entries(targets)) {
@@ -206,34 +302,107 @@ export function validateConfig(config: OpenTPConfig): ConfigIssue[] {
     }
   }
 
-  // spec.targets: per-target base schemas are keyed by target id
+  // spec.targets: common fields of every target (`all`) and of one target (its id)
   const specTargets: unknown = config.spec.targets;
   if (isYamlMapping(specTargets)) {
     for (const targetId of Object.keys(specTargets)) {
-      if (!allTargets.has(targetId)) {
+      if (targetId !== "all" && !allTargets.has(targetId)) {
         issues.push({
           path: `spec.targets.${targetId}`,
-          message: `Unknown target '${targetId}'. Keys of spec.targets must be listed in spec.events.payload.targets.all.`,
+          message: `Unknown target '${targetId}'. Keys of spec.targets must be 'all' or listed in spec.events.payload.targets.all.`,
         });
       }
     }
+  }
+
+  issues.push(...getPortableCheckProblems(config.spec.checks));
+
+  const pii: unknown = config.spec.events.pii;
+  if (isYamlMapping(pii)) {
+    for (const name of ["kind", "masker"]) {
+      const reserved = pii[name];
+      if (isYamlMapping(reserved)) {
+        checkRegex(reserved.pattern, `spec.events.pii.${name}.pattern`, issues);
+        checkEnumAndDict(reserved, `spec.events.pii.${name}`, issues);
+      }
+    }
+    if (isYamlMapping(pii.schema)) {
+      for (const [name, meta] of Object.entries(pii.schema)) {
+        if (isYamlMapping(meta)) checkEnumAndDict(meta, `spec.events.pii.schema.${name}`, issues);
+      }
+    }
+  }
+
+  // Catalog and common fields: conflicts between the layers, types, values, enum members, examples
+  for (const issue of analyzeBaseLayers(config)) {
+    if (!issue.dictionary) issues.push({ path: issue.path, message: issue.message });
   }
 
   return issues;
 }
 
 /**
- * Checks `spec.events.x-opentp.keygen`: the template must parse, every variable must be a taxonomy
- * field or fragment, every pipeline it names must be defined, and every pipeline must be a list of
- * known, well-formed steps (built-in or loaded with --external-transforms, so load external
- * transforms before calling this). Key generation is skipped (with no per-event error) while any of
- * these problems exist.
+ * `enum` and `dict` together on a taxonomy field, fragment or pii setting (payload fields are
+ * checked by the document walk, with `value`)
  */
-export function getKeygenProblems(config: OpenTPConfig): ConfigIssue[] {
-  const keygen: unknown = config.spec.events["x-opentp"]?.keygen;
+function checkEnumAndDict(
+  definition: Record<string, unknown>,
+  path: string,
+  issues: ConfigIssue[],
+): void {
+  if (definition.enum !== undefined && definition.dict !== undefined) {
+    issues.push({ path, message: "enum and dict cannot be used together" });
+  }
+}
+
+/** `spec.checks`: ids, at least one portable keyword per check, valid regexes */
+function getPortableCheckProblems(checks: unknown): ConfigIssue[] {
+  if (checks === undefined || checks === null) return [];
+  if (!isYamlMapping(checks)) {
+    return [
+      { path: "spec.checks", message: "Expected a mapping of check ids to check definitions" },
+    ];
+  }
+  const issues: ConfigIssue[] = [];
+  for (const [id, definition] of Object.entries(checks)) {
+    const checkPath = `spec.checks.${id}`;
+    if (id === WEBHOOK_CHECK_ID) {
+      issues.push({ path: checkPath, message: RESERVED_WEBHOOK_MESSAGE });
+      continue;
+    }
+    if (!CHECK_ID_PATTERN.test(id)) {
+      issues.push({ path: checkPath, message: invalidCheckIdMessage(id) });
+    }
+    if (!isYamlMapping(definition)) {
+      issues.push({ path: checkPath, message: "A portable check must be a mapping of keywords" });
+      continue;
+    }
+    if (!PORTABLE_CHECK_KEYWORDS.some((keyword) => definition[keyword] !== undefined)) {
+      issues.push({
+        path: checkPath,
+        message: `A portable check needs at least one of: ${PORTABLE_CHECK_KEYWORDS.join(", ")}`,
+      });
+    }
+    checkRegex(definition.pattern, `${checkPath}.pattern`, issues);
+  }
+  return issues;
+}
+
+/**
+ * Checks `keygen` (opentp.cli.yaml): the template must parse, every variable must be a taxonomy
+ * field or fragment, every pipeline it names must be defined, and every pipeline must be a list of
+ * known, well-formed steps (built-in or loaded as plugins, so load transform plugins before calling
+ * this). Paths are relative to opentp.cli.yaml (`keygen.template`,
+ * `keygen.transforms.<pipeline>[<i>]`). Key generation is skipped (with no per-event error) while
+ * any of these problems exist.
+ */
+export function getKeygenProblems(
+  keygen: KeygenConfig | null | undefined,
+  config: OpenTPConfig,
+): ConfigIssue[] {
   if (keygen === undefined || keygen === null) return [];
 
-  const basePath = "spec.events.x-opentp.keygen";
+  const basePath = "keygen";
   if (!isYamlMapping(keygen)) {
     return [
       { path: basePath, message: "keygen must be a mapping with 'template' and 'transforms'" },
@@ -242,7 +411,7 @@ export function getKeygenProblems(config: OpenTPConfig): ConfigIssue[] {
 
   const issues: ConfigIssue[] = [];
   const pipelines = new Set<string>();
-  const transforms = keygen.transforms;
+  const transforms: unknown = keygen.transforms;
   if (transforms !== undefined && transforms !== null) {
     if (!isYamlMapping(transforms)) {
       issues.push({
@@ -271,7 +440,7 @@ export function getKeygenProblems(config: OpenTPConfig): ConfigIssue[] {
   }
 
   const templatePath = `${basePath}.template`;
-  const template = keygen.template;
+  const template: unknown = keygen.template;
   if (typeof template !== "string" || template.length === 0) {
     issues.push({ path: templatePath, message: `Missing required field: ${templatePath}` });
     return issues;
@@ -362,4 +531,15 @@ export function getDictsPath(config: OpenTPConfig, rootPath: string): string | n
  */
 export function getEventsTemplate(config: OpenTPConfig): string | null {
   return config.spec.paths.events.template;
+}
+
+/**
+ * Tool files at the plan root that are never read as events or dictionaries, even when an events
+ * or dictionaries root is the plan root
+ */
+export const ROOT_TOOL_FILES = ["opentp.yaml", "opentp.yml", "opentp.cli.yaml", "opentp.cli.yml"];
+
+/** Absolute paths of ROOT_TOOL_FILES in a plan root (for the event and dictionary scans) */
+export function rootToolFiles(rootPath: string): Set<string> {
+  return new Set(ROOT_TOOL_FILES.map((name) => path.resolve(rootPath, name)));
 }

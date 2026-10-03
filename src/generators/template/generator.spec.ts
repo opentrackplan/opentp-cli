@@ -2,6 +2,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { PlanStore } from "../../mcp/plan";
+import { generatorContext } from "../context";
+import { createEffectiveResolver } from "../effective";
 import type { GeneratorContext } from "../types";
 import { templateGenerator } from "./index";
 
@@ -45,6 +48,8 @@ const mockContext: GeneratorContext = {
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
   options: {},
+  effective: (event) =>
+    createEffectiveResolver(mockContext.config, mockContext.dictionaries)(event),
 };
 
 let tempDir: string;
@@ -170,5 +175,42 @@ describe("template generator", () => {
     expect(result.stdout).toContain("# Test App");
     expect(result.stdout).toContain("### app::login");
     expect(result.stdout).toContain("- Status: active");
+  });
+
+  it("exposes the catalog, targets, checks, effective payloads and the tracker binding", async () => {
+    const plan = await new PlanStore(path.resolve("tests/data/tracker")).current();
+    const templatePath = path.join(tempDir, "template.txt");
+    fs.writeFileSync(
+      templatePath,
+      [
+        "catalog: {{catalog.step_index.type}}",
+        "common: {{targets.ios.schema.os_version.type}}",
+        "checks: {{checks}}",
+        "tracker: {{tracker.web.fields.application_id.path}}",
+        "{{#each events}}{{key}} {{effectivePayload.web.fields.event_name.value}}",
+        "{{/each}}",
+      ].join("\n"),
+    );
+    const result = await templateGenerator.generate(
+      generatorContext({
+        config: plan.config,
+        events: plan.events,
+        dictionaries: plan.dictionaries,
+        options: { file: templatePath },
+        tracker: plan.tracker,
+        cliConfig: plan.cli?.config ?? null,
+      }),
+    );
+    expect(result.stdout).toBe(
+      [
+        "catalog: integer",
+        "common: string",
+        "checks: {}",
+        "tracker: atomic.app_id",
+        "auth::login login",
+        "onboarding::step_view onboarding_step_view",
+        "",
+      ].join("\n"),
+    );
   });
 });

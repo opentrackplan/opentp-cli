@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: onboarding::onboarding_step_complete::complete::onboarding_step::p1::internal-true
@@ -18,27 +18,30 @@ event:
       "1.0.0":
         meta:
           changes: Initial version
+          # Deprecated versions are exempt from policy: this one does not list event_category
+          deprecated:
+            reason: Superseded by 1.1.0
+            date: "2026-01-15"
         schema:
           application_id:
             value: web-app
           event_name:
             value: onboarding_step_complete
-          event_category:
-            value: onboarding
           step_index:
-            type: number
             required: true
-          # A dict override that narrows the base enum [email, google, github]
+            example: 2
+          # A dict override that narrows the catalog enum [email, google, github]
           auth_method:
             dict: data/social_auth_methods
       "1.1.0":
         $ref: "1.0.0"
         meta:
           changes:
-            - Added device_model
+            - Added event_category and device_model
         schema:
+          event_category:
+            value: onboarding
           device_model:
-            type: string
             required: false
 
     ios:
@@ -51,6 +54,8 @@ event:
         schema:
           application_id:
             value: mobile-app
+          event_category:
+            value: onboarding
           device_model:
             type: string
             required: true
@@ -64,8 +69,10 @@ event:
         event_category:
           value: onboarding
         step_index:
-          type: number
           required: true
         device_model:
-          type: string
           required: true
+        # Item narrowing: the catalog allows any non-empty string
+        tags:
+          items:
+            enum: [onboarding, activation]

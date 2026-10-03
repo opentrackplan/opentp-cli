@@ -1,0 +1,13 @@
+opentp: 2026-09
+
+event:
+  key: profile::update
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_category:
+        value: profile
+      event_name:
+        value: update

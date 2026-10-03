@@ -1,29 +1,12 @@
 import { stringify } from "yaml";
+import { buildExportData } from "../export";
 import type { GeneratorContext, GeneratorDefinition, GeneratorResult } from "../types";
-
-/**
- * Build export object from context
- */
-function buildExportData(context: GeneratorContext) {
-  const { config, events, dictionaries } = context;
-
-  return {
-    opentp: config.opentp,
-    info: config.info,
-    events: events.map((e) => ({
-      key: e.key,
-      taxonomy: e.taxonomy,
-      lifecycle: e.lifecycle,
-      payload: e.payload,
-    })),
-    dictionaries: Object.fromEntries(dictionaries),
-  };
-}
 
 /**
  * YAML generator
  *
- * Exports all events and dictionaries as YAML.
+ * Exports the catalog, spec.targets, spec.checks, all events (raw payload and effective payload)
+ * and dictionaries as YAML.
  *
  * Options:
  *   --output <path>  Output file path (default: stdout)
@@ -34,7 +17,9 @@ export const yamlGenerator: GeneratorDefinition = {
 
   generate(context: GeneratorContext): GeneratorResult {
     const data = buildExportData(context);
-    const content = stringify(data);
+    // Objects that appear twice (a raw field definition inside an effective payload) are written
+    // twice instead of as YAML anchors and aliases
+    const content = stringify(data, { aliasDuplicateObjects: false });
 
     if (context.options.output) {
       return {

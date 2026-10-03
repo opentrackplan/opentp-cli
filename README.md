@@ -20,11 +20,11 @@ Analytics tracking is broken:
 **Schema-first tracking plans.** Define your events in YAML, validate automatically.
 
 ```yaml
-# events/auth/login_button_click.yaml
-opentp: 2026-01
+# events/auth/login_click.yaml
+opentp: 2026-09
 
 event:
-  key: auth::login_button_click
+  key: auth::login_click
 
   taxonomy:
     action: User clicks the login button
@@ -32,12 +32,14 @@ event:
   payload:
     schema:
       event_name:
-        value: login_button_click
+        value: login_click
       auth_method:
-        type: string
-        enum: [email, google, github]
         required: true
 ```
+
+`auth_method` comes from the plan's field catalog (`type: string`, `enum: [email, google, github]`), so the event only says what it adds. A misspelled field is an error, two events that cannot be told apart are reported, and `opentp generate` exports the effective payload of every event per target.
+
+This CLI reads OpenTrackPlan **2026-09** (the [specification](https://github.com/opentrackplan/opentp-spec)). `2026-01` plans are upgraded with `opentp migrate`.
 
 ## Installation
 
@@ -75,7 +77,7 @@ mv opentp-linux ~/.local/bin/opentp             # any directory on your PATH
 
 On Windows, compare `(Get-FileHash .\opentp.exe -Algorithm SHA256).Hash` with the `opentp.exe` line of `SHA256SUMS`.
 
-> **The npm package `opentp` is obsolete.** The CLI is not published to npm. The old npm package (last version 0.5.0, spec `2025-06`) cannot read `2026-01` plans; if you installed it, remove it with `npm uninstall -g opentp`.
+> **The npm package `opentp` is obsolete.** The CLI is not published to npm. The old npm package (last version 0.5.0, spec `2025-06`) cannot read current plans; if you installed it, remove it with `npm uninstall -g opentp`.
 
 **From source (development):** needs Node.js `^20.19.0 || >=22.12.0`.
 
@@ -92,7 +94,8 @@ node dist/index.cjs --version
 ### 1. Create `opentp.yaml`
 
 ```yaml
-opentp: 2026-01
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-09/opentp.schema.json
+opentp: 2026-09
 
 info:
   title: My App Tracking Plan
@@ -111,18 +114,6 @@ spec:
       minLength: 3
       maxLength: 160
       pattern: "^[a-z0-9_]+::[a-z0-9_]+$"
-
-    x-opentp:
-      keygen:
-        template: "{area | slug}::{event | slug}"
-        transforms:
-          slug:
-            - lower
-            - trim
-            - replace:
-                from: " "
-                to: "_"
-            - truncate: 160
     taxonomy:
       area:
         title: Area
@@ -139,63 +130,106 @@ spec:
     payload:
       targets:
         all: [web, ios, android]
+      # The field catalog: the fields events may use
       schema:
-        application_id:
+        auth_method:
           type: string
-          dict: data/application_id
-          valueRequired: true
-        event_name:
-          type: string
-          required: true
+          enum: [email, google, github]
         dimension_1:
           type: string
           name: orgType
           title: Organization Type
           example: enterprise
 
+  # Common fields: part of every event on a target
+  targets:
+    all:
+      schema:
+        event_name:
+          type: string
+          policy: fixed
 ```
 
-### 2. Create Events
+The **catalog** (`spec.events.payload.schema`) lists the fields an event may use; **common fields** (`spec.targets.all.schema`, or `spec.targets.<target>.schema`) are part of every event. `policy: fixed` makes every event set the field's `value`.
+
+### 2. Create `opentp.cli.yaml` (optional)
+
+CLI settings live next to the plan. Key generation, for example, lets `opentp validate` check every key and `opentp fix` rewrite the wrong ones:
+
+```yaml
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+opentp: 2026-09
+cli: ">=0.10 <0.11"
+
+keygen:
+  template: "{area | slug}::{event | slug}"
+  transforms:
+    slug:
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
+```
+
+### 3. Create Events
 
 ```yaml
 # events/auth/login_click.yaml
-opentp: 2026-01
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-09/event.schema.json
+opentp: 2026-09
 
 event:
   key: auth::login_click
+
   taxonomy:
-    action: User clicks login button
+    action: User clicks the login button
+
   payload:
     schema:
-      application_id:
-        value: web-app
       event_name:
         value: login_click
-      dimension_1:
-        value: enterprise
+      auth_method:
+        required: true
+      dimension_1: {}
 ```
 
 Note: taxonomy fields referenced in `spec.paths.events.template` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
 
-Use `name` when a payload field key is a transport or vendor slot, but the field has a clearer logical/code-facing name. `example` provides a representative value for documentation, mock data, and generators.
+Event fields take their type (and enum, name, title, example) from the catalog or the common fields. Use `name` when a payload field key is a transport or vendor slot, but the field has a clearer logical/code-facing name. `example` provides a representative value for documentation, mock data, and generators.
 
-### 3. Validate
+### 4. Validate
 
 ```bash
 opentp validate
-# ✓ All events are valid count=42
+# ✓ All events are valid count=1
 ```
 
-Validation fails closed (exit code `1`): event or dictionary files that cannot be loaded (YAML syntax errors with line and column, a missing `event` or `event.taxonomy`), keys that cannot be generated, checks that throw, and problems in `opentp.yaml` itself (invalid templates, unknown keygen pipelines or transform steps, unknown dictionaries or target ids) are all reported as errors. `opentp generate` refuses to export a plan that cannot be loaded completely. See [docs/validate.md](docs/validate.md).
+Validation fails closed (exit code `1`): event or dictionary files that cannot be loaded (YAML syntax errors with line and column, a missing `event` or `event.taxonomy`), unknown fields, keys that cannot be generated, checks that throw, and problems in `opentp.yaml` and `opentp.cli.yaml` (invalid templates, unknown keygen pipelines or transform steps, unknown dictionaries or target ids) are all reported as errors. Warnings (unknown check ids, overlapping events) are listed but do not change the exit code (`tests/data/overlap` ends with `✓ All events are valid warnings=4 count=12`). `opentp generate` refuses to export a plan that cannot be loaded completely. See [docs/validate.md](docs/validate.md).
+
+### Upgrading a 2026-01 plan
+
+opentp 0.10 reads only OpenTrackPlan `2026-09`. In a plan repository on `2026-01`, run:
+
+```bash
+opentp migrate --dry-run    # see what would change
+opentp migrate              # rewrite the files (text edits; comments and formatting stay)
+opentp validate
+```
+
+and bump every pinned opentp (`OPENTP_VERSION`, CI images, the `cli` range) to 0.10.x in the same commit. A repository that has to stay on `2026-01` can keep `OPENTP_VERSION=0.9.1`. See [docs/migrate.md](docs/migrate.md).
 
 ## CLI Commands
 
 | Command | Description                                         |
 |---------|-----------------------------------------------------|
-| `opentp validate` | Validate all events                                 |
-| `opentp fix` | Auto-fix `event.key` (requires `spec.events.x-opentp.keygen`) |
-| `opentp generate json` | Export as JSON                                      |
-| `opentp generate yaml` | Export as YAML                                      |
+| `opentp validate` | Validate the plan (the default command) |
+| `opentp fix` | Rewrite `event.key` from `keygen` in `opentp.cli.yaml` (only the key's text changes; comments and formatting stay), then validate |
+| `opentp generate json` | Export as JSON (catalog, targets, checks, every event with its raw and effective payload) |
+| `opentp generate yaml` | Export as YAML |
+| `opentp generate` | Run the `generate.run` entries of `opentp.cli.yaml` |
+| `opentp migrate` | Upgrade a `2026-01` plan to `2026-09` |
 | `opentp mcp` | Serve the plan to AI agents over MCP (stdio, read-only tools) |
 | `opentp --help` | Show help                                           |
 | `opentp --version` | Show version                                        |
@@ -204,25 +238,32 @@ Validation fails closed (exit code `1`): event or dictionary files that cannot b
 
 ```bash
 opentp validate --root ./my-project     # Custom project root (-r; default: $OPENTP_ROOT or cwd)
+opentp validate --cli-config ci.opentp.cli.yaml   # Another opentp.cli.yaml (relative to cwd)
 opentp validate --verbose               # Debug logs on stderr (-v)
 opentp validate --json > report.json    # Machine-readable result; stdout holds only the JSON
-opentp validate --external-rules ./rules    # Custom validation checks (repeatable)
+opentp validate --fail-on overlap       # Report overlapping events (or unknownCheck) as errors
+opentp validate --allow-plugins         # Load the plugins named in opentp.cli.yaml
+opentp validate --external-rules ./rules    # Custom checks (repeatable)
 opentp validate --external-transforms ./transforms  # Custom keygen transforms (repeatable)
 opentp generate json -o events.json     # Write to a file (relative to --root) instead of stdout
 opentp generate json | jq '.events | length'   # stdout is complete and parseable
 ```
 
-Logs go to stderr; stdout carries only the report, the `--json` document, the generator output, or the MCP protocol (`opentp mcp`). Arguments are strict: an unknown command or option (`opentp valdiate`), an option the command does not accept, or an unexpected argument exits with code `2`. Run `opentp --help` for every option.
+Logs go to stderr; stdout carries only the report, the `--json` document, the generator output, the list of migrated files, or the MCP protocol (`opentp mcp`). Arguments are strict: an unknown command or option (`opentp valdiate`), an option the command does not accept, or an unexpected argument exits with code `2`. Run `opentp --help` for every option.
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | Success |
-| `1` | Validation errors, a plan that cannot be loaded completely, or a failed generator |
-| `2` | Usage or configuration error: unknown command or option, invalid `OPENTP_LOG_LEVEL`, missing plugin directory, unknown generator, `opentp.yaml` missing or invalid |
+| `0` | Success (warnings do not change the exit code) |
+| `1` | Validation errors, a plan that cannot be loaded completely, or a failed generator; `migrate --check` found files to migrate |
+| `2` | Usage or configuration error: unknown command or option, invalid `OPENTP_LOG_LEVEL`, missing plugin directory, unknown generator, `opentp.yaml` missing or invalid (including a `2026-01` plan), `opentp.cli.yaml` not usable, `fix` without `keygen` |
+
+### opentp.cli.yaml
+
+Settings of this CLI live in `opentp.cli.yaml` next to `opentp.yaml` (or `--cli-config`), never in the plan: `keygen` (event key generation), `checks` (check bindings such as webhooks, check plugins, the severity of `overlap` and `unknownCheck`), `tracker` (where each field travels in a Snowplow, GA4, Amplitude or Segment payload), `generate` (generator plugins and the runs of `opentp generate`), `mcp` (the tool groups) and, in an application repository that uses a plan from another repository, `plan:` (a directory, or a git URL pinned to a tag or commit SHA). Plugins named there load only with `--allow-plugins` or `OPENTP_ALLOW_PLUGINS=1`. See [docs/config.md](docs/config.md).
 
 ### AI agents (MCP)
 
-`opentp mcp` lets an AI agent (Claude Code, Codex, Cursor, VS Code, Claude Desktop, ...) search the plan, read an event's effective payload per target, and validate a draft before writing it. All tools are read-only; the agent writes event files itself. Commit `.mcp.json` to the plan repository:
+`opentp mcp` lets an AI agent (Claude Code, Codex, Cursor, VS Code, Claude Desktop, ...) search the plan, read an event's effective payload per target, and validate a draft (including its overlap with existing events) before writing it. All tools are read-only; the agent writes event files itself. Commit `.mcp.json` to the plan repository:
 
 ```json
 {
@@ -252,7 +293,7 @@ Define allowed values once, reference everywhere:
 
 ```yaml
 # dictionaries/taxonomy/areas.yaml
-opentp: 2026-01
+opentp: 2026-09
 
 dict:
   type: string
@@ -266,115 +307,150 @@ dict:
 # opentp.yaml
 taxonomy:
   area:
+    title: Area
     type: string
     dict: taxonomy/areas  # Reference the dictionary
 ```
 
+### Catalog, common fields and policy
+
+`spec.events.payload.schema` is the field catalog: the fields an event may list (each with a `type`). `spec.targets.all.schema` and `spec.targets.<target>.schema` hold the common fields, which are part of every event on that target. An event field is merged over both (it needs no `type` of its own), and a field that is in neither is an error. A `policy` on a catalog or common field says what every event must write: `specified` (list the field), `restricted` (a `value`, `enum` or `dict`; an array field only a `value`) or `fixed` (a `value`).
+
 ### Transforms
 
-Transforms modify taxonomy values when generating event keys (via `spec.events.x-opentp.keygen`).
+Transforms modify taxonomy values when event keys are generated (`keygen.transforms` in `opentp.cli.yaml`). See [docs/transforms.md](docs/transforms.md).
 
 | Transform | Description |
 |-----------|-------------|
 | `lower` | Lowercase |
 | `upper` | Uppercase |
-| `trim` | Remove whitespace |
-| `replace` | Replace literal substring |
+| `trim` | Remove whitespace (or the characters in `chars`) at both ends |
+| `replace` | Replace every occurrence of a literal substring |
 | `truncate` | Limit length |
-| `collapse` | Collapse repeated characters |
-| `keep` | Keep only allowed characters |
+| `collapse` | Remove every character outside `A-Z`, `a-z`, `0-9` |
+| `keep` | Keep only the characters of a character class |
 | `to-snake-case` | Convert to snake_case |
-| `to-kebab` | Convert to kebab-case |
+| `to-kebab` | Replace every run of non-alphanumeric characters with `-` (case unchanged) |
 | `to-camel-case` | Convert to camelCase |
-| `to-underscore` | Replace spaces with underscores |
+| `to-underscore` | Replace every run of non-alphanumeric characters with `_` (case unchanged) |
 | `transliterate` | Character mapping |
 
 ### Validation Checks
 
-Use JSON-Schema-like constraints for portable validation (e.g. `minLength`, `maximum`, `pattern`).
-
-For CLI-specific validation rules, use `x-opentp.checks`.
+Use JSON-Schema-like constraints for portable validation (e.g. `minLength`, `maximum`, `pattern`, `format`), and named checks for the rest. `checks: { <id>: <params> }` refers to a portable check in `spec.checks`, a built-in check, a check bound in `opentp.cli.yaml`, or a plugin:
 
 ```yaml
-taxonomy:
-  area:
-    type: string
-    minLength: 1
-    maxLength: 50
-    pattern: "^[a-z_]+$"
-    x-opentp:
-      checks:
-        starts-with: "a"
+# opentp.yaml
+spec:
+  checks:
+    jira-key:
+      pattern: "^[A-Z]+-[0-9]+$"
+  events:
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        minLength: 1
+        maxLength: 50
+        pattern: "^[a-z_]+$"
+        checks:
+          starts-with: "a"
+      ticket:
+        title: Ticket
+        type: string
+        checks:
+          jira-key: true
 ```
 
-Built-in `x-opentp.checks`: `max-length`, `min-length`, `pattern`, `starts-with`, `ends-with`, `contains`, `not-empty`, `webhook`
+Built-in checks: `max-length`, `min-length`, `pattern`, `starts-with`, `ends-with`, `contains`, `not-empty`. An id that nothing defines is a warning (`unknownCheck`), so a plan can carry checks for other tools. See [docs/rules.md](docs/rules.md).
 
 ### Webhook Validation
 
-Validate against external API:
+Webhooks are bound in `opentp.cli.yaml` and referred to by id in the plan (`ticket-exists: true`):
 
 ```yaml
-taxonomy:
-  company_id:
-    type: string
-    x-opentp:
-      checks:
-        webhook:
-          url: https://api.company.com/validate
-          headers:
-            Authorization: "Bearer ${API_KEY}"
-          timeout: 5000
-          retries: 2
+# opentp.cli.yaml
+opentp: 2026-09
+
+checks:
+  bindings:
+    ticket-exists:
+      webhook:
+        url: https://tickets.example.com/api/check
+        headers:
+          Authorization: "Bearer ${TICKETS_TOKEN}"
+        timeout: 5000
+        retries: 2
 ```
 
-Allow the variables a webhook may read with `OPENTP_WEBHOOK_ENV` in the environment of the run (e.g. `OPENTP_WEBHOOK_ENV=API_KEY opentp validate` in CI); without it, opentp reads any variable and warns. It limits which variables are read, not where they are sent: whoever can change the plan (`opentp.yaml` or an event file) can point a check at another URL, so do not run webhook checks that use secrets on untrusted changes. See [docs/rules.md](docs/rules.md).
+A webhook may read only the variables listed in `OPENTP_WEBHOOK_ENV` in the environment of the run (e.g. `OPENTP_WEBHOOK_ENV=TICKETS_TOKEN opentp validate` in CI); unset, it may read none. It limits which variables are read, not where they are sent: whoever can change `opentp.cli.yaml` can point a binding at another URL, so protect that file like code and do not run webhook checks that use secrets on untrusted changes. See [docs/rules.md](docs/rules.md).
 
 ## Extensibility
+
+Plugins are JavaScript modules: custom checks, keygen transform steps and generators. Name their directories in `opentp.cli.yaml` (`checks.plugins`, `keygen.plugins`, `generate.plugins`, relative to that file) and allow them per run with `--allow-plugins` or `OPENTP_ALLOW_PLUGINS=1`; without that, opentp warns and runs without them, so a change to the repository cannot make every machine run new code. The `--external-rules`, `--external-transforms` and `--external-generators` options (relative to the current directory) always load. Each `<dir>/<name>/index.js` is loaded as an ES module (`export default { ... }`) or a CommonJS module (`module.exports = { ... }`), depending on the nearest `package.json`. See [docs/config.md](docs/config.md).
 
 ### Custom Rules
 
 ```javascript
-// my-rules/company-id/index.js
+// tools/checks/company-id/index.js
 module.exports = {
   name: 'company-id',
-  validate: (value, params, context) => {
-    if (!value.startsWith('COMP-')) {
-      return { valid: false, error: 'Must start with COMP-' };
-    }
-    return { valid: true };
-  }
+  validate: (value, params, context) =>
+    typeof value === 'string' && value.startsWith('COMP-')
+      ? { valid: true }
+      : { valid: false, error: 'Must start with COMP-' },
 };
 ```
 
-```bash
-opentp validate --external-rules ./my-rules
+```yaml
+# opentp.cli.yaml
+opentp: 2026-09
+
+checks:
+  plugins: [tools/checks]
 ```
 
-A rule that throws does not abort validation: the field gets the error `check <name> failed: <message>`.
+```bash
+opentp validate --allow-plugins                  # checks.plugins of opentp.cli.yaml
+opentp validate --external-rules ./tools/checks  # or name the directory on the command line
+```
 
-Plugin directories (`--external-rules`, `--external-transforms`, `--external-generators`) are resolved against the current directory. Each `<dir>/<name>/index.js` is loaded as an ES module (`export default { ... }`) or a CommonJS module (`module.exports = { ... }`), depending on the nearest `package.json`.
+The plan refers to the check by name (`checks: { company-id: true }`). A rule that throws does not abort validation: the value gets the error `check <name> failed: <message>`. See [docs/rules.md](docs/rules.md).
 
 ### Custom Transforms
 
 ```javascript
-// my-transforms/reverse/index.js
+// tools/transforms/reverse/index.js
 module.exports = {
   name: 'reverse',
   factory: (params) => (value) => value.split('').reverse().join('')
 };
 ```
 
-```bash
-opentp validate --external-transforms ./my-transforms
+```yaml
+# opentp.cli.yaml
+opentp: 2026-09
+
+keygen:
+  template: "{area | slug}::{event | slug}"
+  transforms:
+    slug: [lower, reverse]
+  plugins: [tools/transforms]
 ```
 
-An unknown or malformed step in a keygen pipeline is a configuration error reported against `opentp.yaml`, so pass `--external-transforms` to `fix` and `generate` as well when the pipelines use custom steps.
+```bash
+opentp validate --allow-plugins
+opentp validate --external-transforms ./tools/transforms
+```
+
+An unknown or malformed step in a keygen pipeline is a configuration error reported against `opentp.cli.yaml`, so allow the plugins (or pass `--external-transforms`) for `fix`, `generate` and `mcp` as well. See [docs/transforms.md](docs/transforms.md).
 
 ## Project Structure
 
 ```
 my-tracking-plan/
-├── opentp.yaml                 # Main config
+├── opentp.yaml                 # The plan
+├── opentp.cli.yaml             # CLI settings (optional)
 ├── events/                     # Event definitions
 │   └── {area}/{event}.yaml
 └── dictionaries/               # Reusable enums
@@ -391,16 +467,23 @@ See `tests/data/coverage-valid/` for a complete working example used by the CLI 
 IDE autocompletion and validation:
 
 ```yaml
-# yaml-language-server: $schema=https://opentp.dev/schemas/2026-01/event.schema.json
-opentp: 2026-01
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-09/event.schema.json
+opentp: 2026-09
 event:
-  ...
+  key: auth::login_click
+  taxonomy:
+    action: User clicks the login button
+  payload:
+    schema:
+      event_name:
+        value: login_click
 ```
 
 Available schemas:
-- `https://opentp.dev/schemas/2026-01/opentp.schema.json` — main config
-- `https://opentp.dev/schemas/2026-01/event.schema.json` — events
-- `https://opentp.dev/schemas/2026-01/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/2026-09/opentp.schema.json` — the plan (`opentp.yaml`)
+- `https://opentp.dev/schemas/2026-09/event.schema.json` — events
+- `https://opentp.dev/schemas/2026-09/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/cli/opentp.cli.schema.json` — CLI settings (`opentp.cli.yaml`; this repository's `schemas/opentp.cli.schema.json`)
 
 ## Enterprise Installation
 
@@ -435,6 +518,8 @@ These variables are not persisted (set them again when needed).
 - [x] Validation checks system
 - [x] Custom checks and transforms
 - [x] Generators (JSON, YAML)
+- [x] MCP server for AI agents (`opentp mcp`)
+- [x] Overlapping-event detection, tracker bindings, application repositories, `opentp migrate`
 - [ ] GitHub Action
 - [ ] VS Code extension
 - [ ] TypeScript SDK generator

@@ -1,0 +1,13 @@
+opentp: 2026-09
+
+event:
+  key: checkout::purchase_duplicate
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_category:
+        value: checkout
+      event_name:
+        value: purchase

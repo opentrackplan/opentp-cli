@@ -1,0 +1,17 @@
+opentp: 2026-09
+
+event:
+  key: cart::add_item
+
+  taxonomy: {}
+
+  ignore:
+    - path: overlap.cart::add
+      reason: Both names are sent until the old app versions are gone
+
+  payload:
+    schema:
+      event_category:
+        value: cart
+      event_name:
+        value: add

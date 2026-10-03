@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
+import type { McpToolGroup } from "../cliconfig";
 import { PlanStore } from "./plan";
 import { buildMcpServer } from "./server";
 
@@ -23,9 +24,9 @@ const TOOLS = [
 
 let client: Client | undefined;
 
-async function connect(root = FIXTURE): Promise<Client> {
+async function connect(root = FIXTURE, tools?: Set<McpToolGroup>): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = buildMcpServer(new PlanStore(root));
+  const server = buildMcpServer(new PlanStore(root), { tools });
   await server.connect(serverTransport);
   client = new Client({ name: "opentp-test", version: "1.0.0" });
   await client.connect(clientTransport);
@@ -59,6 +60,110 @@ describe("buildMcpServer", () => {
     expect(mcp.getServerVersion()?.name).toBe("opentp");
   });
 
+  it("registers only the enabled tool groups (opentp.cli.yaml mcp.tools)", async () => {
+    const searchOnly = await connect(FIXTURE, new Set<McpToolGroup>(["search", "validate"]));
+    const { tools } = await searchOnly.listTools();
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "search_events",
+      "validate_event_draft",
+      "validate_plan",
+    ]);
+    // The resources belong to the describe group
+    await expect(searchOnly.readResource({ uri: "opentp://plan/summary" })).rejects.toThrow();
+    await searchOnly.close();
+
+    const describe = await connect(FIXTURE, new Set<McpToolGroup>(["describe"]));
+    expect((await describe.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+      "describe_plan",
+      "get_dictionary",
+      "get_event",
+      "list_dictionaries",
+      "suggest_event",
+    ]);
+    const summary = await describe.readResource({ uri: "opentp://plan/summary" });
+    expect(summary.contents).toHaveLength(1);
+  });
+
+  it("names only the registered tools in its instructions", async () => {
+    const groups: McpToolGroup[] = ["describe", "search", "validate", "generate"];
+    const subsets = Array.from({ length: 15 }, (_, mask) =>
+      groups.filter((_, bit) => ((mask + 1) >> bit) & 1),
+    );
+    for (const subset of subsets) {
+      const mcp = await connect(FIXTURE, new Set(subset));
+      const registered = new Set((await mcp.listTools()).tools.map((tool) => tool.name));
+      const instructions = mcp.getInstructions() ?? "";
+      const named = TOOLS.filter((tool) => new RegExp(`\\b${tool}\\b`).test(instructions));
+      expect(
+        named.filter((tool) => !registered.has(tool)),
+        subset.join(","),
+      ).toEqual([]);
+      // Every group is introduced
+      for (const tool of ["describe_plan", "search_events", "validate_plan", "generate"]) {
+        if (registered.has(tool)) expect(named, subset.join(",")).toContain(tool);
+      }
+      expect(instructions).toContain("never write files");
+      await mcp.close();
+    }
+  });
+
+  it("names only the registered tools in tool descriptions and in describe_plan's howTo", async () => {
+    const groups: McpToolGroup[] = ["describe", "search", "validate", "generate"];
+    const subsets = Array.from({ length: 15 }, (_, mask) =>
+      groups.filter((_, bit) => ((mask + 1) >> bit) & 1),
+    );
+    const mentions = (textToSearch: string) =>
+      TOOLS.filter((tool) => new RegExp(`\\b${tool}\\b`).test(textToSearch));
+    let howToChecked = 0;
+    for (const subset of subsets) {
+      const mcp = await connect(FIXTURE, new Set(subset));
+      const { tools } = await mcp.listTools();
+      const registered = new Set(tools.map((tool) => tool.name));
+      for (const tool of tools) {
+        // The description and the input schema (its property descriptions)
+        const named = mentions(`${tool.description}\n${JSON.stringify(tool.inputSchema)}`);
+        expect(
+          named.filter((other) => !registered.has(other)),
+          `${subset.join(",")}: ${tool.name}`,
+        ).toEqual([]);
+      }
+      if (registered.has("describe_plan")) {
+        const result = await mcp.callTool({ name: "describe_plan", arguments: {} });
+        const { howTo } = result.structuredContent as { howTo: string[] };
+        expect(
+          mentions(howTo.join("\n")).filter((other) => !registered.has(other)),
+          subset.join(","),
+        ).toEqual([]);
+        howToChecked += 1;
+      }
+      await mcp.close();
+    }
+    expect(howToChecked).toBe(8);
+
+    // With every group, the cross-references are there
+    const all = await connect();
+    const { tools } = await all.listTools();
+    const description = (name: string) => tools.find((tool) => tool.name === name);
+    expect(description("search_events")?.description).toContain("Returns keys for get_event.");
+    expect(JSON.stringify(description("validate_event_draft")?.inputSchema)).toContain(
+      "see suggest_event",
+    );
+  });
+
+  it("says that restricted fields take enum values or a value, and array fields only a value", async () => {
+    const mcp = await connect();
+    const { tools } = await mcp.listTools();
+    const suggest = tools.find((tool) => tool.name === "suggest_event");
+    expect(suggest?.description).toContain(
+      "replace each <...> placeholder: a value for fixed, enum values or a value for restricted; an array field takes only a value",
+    );
+    const result = await mcp.callTool({ name: "describe_plan", arguments: {} });
+    const { howTo } = result.structuredContent as { howTo: string[] };
+    expect(howTo.join("\n")).toContain(
+      "restricted (an enum, a dict or a value; an array field only a value)",
+    );
+  });
+
   it("returns tool results as JSON text and structured content", async () => {
     const mcp = await connect();
     const result = await mcp.callTool({
@@ -84,6 +189,34 @@ describe("buildMcpServer", () => {
       eventCount: 1,
       bytes: Buffer.byteLength(text(result)),
     });
+  });
+
+  it("runs a generate.run entry by index and writes nothing", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "opentp-mcp-server-"));
+    try {
+      fs.cpSync(FIXTURE, root, { recursive: true });
+      fs.appendFileSync(
+        path.join(root, "opentp.cli.yaml"),
+        "\ngenerate:\n  run:\n    - { generator: yaml, target: android, output: out/android.yaml }\n",
+      );
+      const mcp = await connect(root);
+      const result = await mcp.callTool({ name: "generate", arguments: { run: 0 } });
+      expect(result.isError).toBeFalsy();
+      expect(text(result)).toContain("effectivePayload:");
+      expect(result.structuredContent).toMatchObject({
+        generator: "yaml",
+        run: 0,
+        entryOutput: "out/android.yaml",
+        eventCount: 4,
+      });
+      expect(fs.existsSync(path.join(root, "out"))).toBe(false);
+
+      const neither = await mcp.callTool({ name: "generate", arguments: {} });
+      expect(neither.isError).toBe(true);
+      expect(text(neither)).toContain("Pass generator (json or yaml) or run");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses responses over the size limit", async () => {

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+opentp: 2026-09
+
+keygen:
+  template: "{area}::{event}"
+
+# Where each field travels in the Snowplow payload (tool configuration: it changes no event)
+tracker:
+  type: snowplow
+  event: iglu:com.acme/event/jsonschema/1-0-0
+  contexts:
+    dimensions: iglu:com.acme/dimensions/jsonschema/1-0-0
+  map:
+    # A container path: the field name is the leaf (contexts.dimensions.dimension_1)
+    "dimension_*": contexts.dimensions
+    application_id: atomic.app_id
+    platform: atomic.platform
+    user_id: atomic.user_id
+  setBy:
+    app: [application_id, user_id]
+    tracker: [platform]
+  targets:
+    ios:
+      contexts:
+        mobile_context: iglu:com.acme/mobile_context/jsonschema/1-0-0
+      map:
+        device_is_webview: contexts.mobile_context.isWebview
+        os_version: contexts.mobile_context
+    android:
+      contexts:
+        mobile_context: iglu:com.acme/mobile_context/jsonschema/1-0-0
+      map:
+        device_is_webview: contexts.mobile_context.isWebview

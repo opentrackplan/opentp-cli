@@ -24,7 +24,7 @@ export function getStepProblem(step: unknown): string | null {
     return `Invalid transform step ${JSON.stringify(step) ?? String(step)}: expected a step name or a single-key mapping { <step>: <params> }`;
   }
   if (!hasStep(stepName)) {
-    return `Unknown transform step '${stepName}' (custom steps are loaded with --external-transforms)`;
+    return `Unknown transform step '${stepName}' (custom steps: keygen.plugins in opentp.cli.yaml, or --external-transforms)`;
   }
   return null;
 }

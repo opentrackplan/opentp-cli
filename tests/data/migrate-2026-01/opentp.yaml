@@ -1,0 +1,101 @@
+# A 2026-01 plan that covers every change opentp migrate makes.
+# Comments and formatting must survive byte for byte.
+opentp: "2026-01" # spec version
+
+info:
+  title: Migrate Fixture
+  version: 1.0.0
+  description: Input of the opentp migrate fixture test
+
+spec:
+  paths:
+    events:
+      root: /events
+      template: "{area}/{event}.yaml"
+    dictionaries:
+      root: /dictionaries
+
+  # Events: key constraints, key generation, taxonomy and payload
+  events:
+    key:
+      pattern: '^[a-z_]+::[a-z_]+$'
+
+    x-opentp:
+      keygen:
+        template: '{area | slug}::{event | slug}'
+        transforms:
+          slug:
+            - lower
+            - to-underscore   # spaces and dashes become _
+
+    taxonomy:
+      area:
+        title: Area
+        type: string
+        dict: taxonomy/areas
+        required: true
+      event:
+        title: Event
+        type: string
+        required: true
+      ticket:
+        title: Ticket
+        type: string
+        required: false
+        enum: []
+        x-opentp:
+          checks:
+            webhook: { url: "https://example.com/hooks/ticket", method: POST }
+
+    payload:
+      targets:
+        all: [web, ios, android]
+        mobile: [ios, android]
+
+      # Base fields: part of every event
+      schema:
+        application_id:
+          type: string
+          dict: data/application_id
+          required: true
+        event_category:   # pinned by every event
+          type: string
+          required: true
+          valueRequired: true
+        event_name:
+          type: string
+          required: false
+          valueRequired: true
+        event_label: { type: string, valueRequired: true }
+        platform:
+          valueRequired: true
+        schema_version:
+          value: 3
+          required: false
+          valueRequired: true
+
+        user_id:
+          type: string
+          x-opentp:
+            role: attribute
+        session_id:
+          type: string
+          x-opentp:
+            role: shared
+            checks:
+              min-length: 8
+        consent:
+          type: boolean
+          enum: []
+        app_version: { type: string, example: 1.10 }
+
+  # Target base fields
+  targets:
+    ios:
+      schema:
+        platform: { value: ios }
+        device_model: { type: string }
+    android:
+      schema:
+        platform:
+          value: android

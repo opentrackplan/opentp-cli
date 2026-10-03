@@ -114,18 +114,32 @@ export function patternToRegex(pattern: string): RegExp {
   return patternToRegexWithVars(pattern, { segment: false });
 }
 
+/**
+ * Converts a path template to a regex: each placeholder matches one path segment, and a template
+ * that ends in `.yaml` or `.yml` matches files with either extension (2026-09).
+ */
 export function templateToRegex(template: string): RegExp {
-  return patternToRegexWithVars(template, { segment: true });
+  return patternToRegexWithVars(template, { segment: true, yamlExtension: true });
 }
 
-function patternToRegexWithVars(pattern: string, opts: { segment: boolean }): RegExp {
+const YAML_EXTENSION = /\.ya?ml$/;
+
+function patternToRegexWithVars(
+  pattern: string,
+  opts: { segment: boolean; yamlExtension?: boolean },
+): RegExp {
   const parts = parsePattern(pattern);
   let regexStr = "^";
 
-  for (const part of parts) {
+  for (const [index, part] of parts.entries()) {
     if (part.type === "literal") {
-      // Escape regex special characters
-      regexStr += escapeRegex(part.value);
+      const isLast = index === parts.length - 1;
+      if (opts.yamlExtension && isLast && YAML_EXTENSION.test(part.value)) {
+        regexStr += `${escapeRegex(part.value.replace(YAML_EXTENSION, ""))}\\.ya?ml`;
+      } else {
+        // Escape regex special characters
+        regexStr += escapeRegex(part.value);
+      }
     } else {
       // Named capture group for variable
       regexStr += opts.segment ? `(?<${part.value}>[^/]+?)` : `(?<${part.value}>.+?)`;

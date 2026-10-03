@@ -56,7 +56,7 @@ describe("transforms/index", () => {
 
     it("throws on an unknown step instead of skipping it", () => {
       expect(() => createTransform(["lower", "unknown"])).toThrow(
-        "Unknown transform step 'unknown' (custom steps are loaded with --external-transforms)",
+        "Unknown transform step 'unknown' (custom steps: keygen.plugins in opentp.cli.yaml, or --external-transforms)",
       );
       expect(() => createTransform([{ unknown: { a: 1 } }])).toThrow(
         "Unknown transform step 'unknown'",
@@ -84,7 +84,7 @@ describe("transforms/index", () => {
 
     it("reports unknown and malformed steps", () => {
       expect(getStepProblem("slugify")).toBe(
-        "Unknown transform step 'slugify' (custom steps are loaded with --external-transforms)",
+        "Unknown transform step 'slugify' (custom steps: keygen.plugins in opentp.cli.yaml, or --external-transforms)",
       );
       expect(getStepProblem(undefined)).toBe(
         "Invalid transform step undefined: expected a step name or a single-key mapping { <step>: <params> }",

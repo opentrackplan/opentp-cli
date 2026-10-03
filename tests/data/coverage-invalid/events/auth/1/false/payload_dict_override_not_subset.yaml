@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::payload_dict_override_not_subset::p1::internal-false

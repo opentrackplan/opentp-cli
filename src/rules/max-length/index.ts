@@ -1,7 +1,10 @@
+import { codePointLength } from "../../core/constraints";
 import type { RuleDefinition } from "../types";
 
 /**
  * Validates that a string value does not exceed maximum length
+ *
+ * The length is counted in Unicode code points (an emoji counts as 1).
  *
  * Params: number (max length)
  *
@@ -22,10 +25,11 @@ export const maxLength: RuleDefinition = {
       };
     }
 
-    if (value.length > maxLen) {
+    const length = codePointLength(value);
+    if (length > maxLen) {
       return {
         valid: false,
-        error: `Length ${value.length} exceeds maximum ${maxLen}`,
+        error: `Length ${length} exceeds maximum ${maxLen}`,
         code: "MAX_LENGTH_EXCEEDED",
       };
     }

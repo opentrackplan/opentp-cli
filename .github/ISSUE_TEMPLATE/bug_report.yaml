@@ -37,6 +37,8 @@ body:
         - label: "CLI (opentp)"
         - label: "Validation"
         - label: "Generators"
+        - label: "Migration (opentp migrate)"
+        - label: "CLI settings (opentp.cli.yaml, plugins, application repositories)"
         - label: "MCP server (opentp mcp)"
         - label: "Documentation / Specification"
 
@@ -45,7 +47,7 @@ body:
     attributes:
       label: Versions
       description: Output of `opentp --version`
-      placeholder: "opentp v0.9.1 (spec 2026-01)"
+      placeholder: "opentp v0.10.0 (spec 2026-09)"
     validations:
       required: true
 
@@ -89,8 +91,9 @@ body:
     id: spec-snippet
     attributes:
       label: Spec/event snippet (YAML)
+      description: The relevant parts of opentp.yaml, the event file and, if it matters, opentp.cli.yaml
       render: yaml
       placeholder: |
-        opentp: 2026-01
+        opentp: 2026-09
         info: ...
         spec: ...

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearWebhookCache, webhook } from "./index";
+import { callWebhook, clearWebhookCache } from "./webhook";
 
 const ctx = { fieldName: "test", fieldPath: "test", eventKey: "test::event" };
 
-describe("webhook rule", () => {
+describe("webhook binding", () => {
   beforeEach(() => {
     clearWebhookCache();
     vi.stubGlobal("fetch", vi.fn());
@@ -14,7 +14,7 @@ describe("webhook rule", () => {
   });
 
   it("should fail when url is missing", async () => {
-    const result = await webhook.validate("value", {}, ctx);
+    const result = await callWebhook("value", {} as never, ctx);
     expect(result.valid).toBe(false);
     expect(result.code).toBe("WEBHOOK_MISSING_URL");
   });
@@ -25,7 +25,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    const result = await webhook.validate(
+    const result = await callWebhook(
       "test-value",
       { url: "https://api.example.com/validate" },
       ctx,
@@ -49,11 +49,7 @@ describe("webhook rule", () => {
       json: async () => ({ error: "Invalid value" }),
     } as unknown as Response);
 
-    const result = await webhook.validate(
-      "bad-value",
-      { url: "https://api.example.com/validate" },
-      ctx,
-    );
+    const result = await callWebhook("bad-value", { url: "https://api.example.com/validate" }, ctx);
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Invalid value");
     expect(result.code).toBe("WEBHOOK_VALIDATION_FAILED");
@@ -66,11 +62,7 @@ describe("webhook rule", () => {
       json: async () => ({ message: "Validation failed" }),
     } as unknown as Response);
 
-    const result = await webhook.validate(
-      "value",
-      { url: "https://api.example.com/validate" },
-      ctx,
-    );
+    const result = await callWebhook("value", { url: "https://api.example.com/validate" }, ctx);
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Validation failed");
   });
@@ -82,11 +74,7 @@ describe("webhook rule", () => {
       json: async () => ({}),
     } as unknown as Response);
 
-    const result = await webhook.validate(
-      "value",
-      { url: "https://api.example.com/validate" },
-      ctx,
-    );
+    const result = await callWebhook("value", { url: "https://api.example.com/validate" }, ctx);
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Webhook returned 500");
   });
@@ -97,7 +85,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    await webhook.validate("value", { url: "https://api.example.com/check", method: "GET" }, ctx);
+    await callWebhook("value", { url: "https://api.example.com/check", method: "GET" }, ctx);
     expect(fetch).toHaveBeenCalledWith(
       "https://api.example.com/check",
       expect.objectContaining({
@@ -113,7 +101,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    await webhook.validate("value", { url: "https://api.example.com/check", method: "PUT" }, ctx);
+    await callWebhook("value", { url: "https://api.example.com/check", method: "PUT" }, ctx);
     expect(fetch).toHaveBeenCalledWith(
       "https://api.example.com/check",
       expect.objectContaining({
@@ -128,7 +116,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    await webhook.validate(
+    await callWebhook(
       "value",
       {
         url: "https://api.example.com/validate",
@@ -149,26 +137,29 @@ describe("webhook rule", () => {
   });
 
   it("should interpolate environment variables in url", async () => {
+    process.env.OPENTP_WEBHOOK_ENV = "TEST_API_HOST";
     process.env.TEST_API_HOST = "api.test.com";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       status: 200,
     } as Response);
 
-    await webhook.validate("value", { url: `https://\${TEST_API_HOST}/validate` }, ctx);
+    await callWebhook("value", { url: `https://\${TEST_API_HOST}/validate` }, ctx);
     expect(fetch).toHaveBeenCalledWith("https://api.test.com/validate", expect.any(Object));
 
     delete process.env.TEST_API_HOST;
+    delete process.env.OPENTP_WEBHOOK_ENV;
   });
 
   it("should interpolate environment variables in headers", async () => {
+    process.env.OPENTP_WEBHOOK_ENV = "TEST_API_KEY";
     process.env.TEST_API_KEY = "secret-key-123";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       status: 200,
     } as Response);
 
-    await webhook.validate(
+    await callWebhook(
       "value",
       {
         url: "https://api.example.com/validate",
@@ -187,6 +178,7 @@ describe("webhook rule", () => {
     );
 
     delete process.env.TEST_API_KEY;
+    delete process.env.OPENTP_WEBHOOK_ENV;
   });
 
   describe("OPENTP_WEBHOOK_ENV", () => {
@@ -202,7 +194,7 @@ describe("webhook rule", () => {
       process.env.TEST_SECRET = "do-not-send";
       vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
 
-      const allowed = await webhook.validate(
+      const allowed = await callWebhook(
         "value",
         { url: `https://api.example.com/\${TEST_ALLOWED}` },
         ctx,
@@ -211,7 +203,7 @@ describe("webhook rule", () => {
       expect(fetch).toHaveBeenCalledWith("https://api.example.com/ok", expect.any(Object));
 
       vi.mocked(fetch).mockClear();
-      const denied = await webhook.validate(
+      const denied = await callWebhook(
         "value",
         {
           url: `https://evil.example.com/?k=\${TEST_SECRET}`,
@@ -227,7 +219,7 @@ describe("webhook rule", () => {
     it("allows no variable when it is set but empty", async () => {
       process.env.OPENTP_WEBHOOK_ENV = "";
       process.env.TEST_SECRET = "do-not-send";
-      const result = await webhook.validate(
+      const result = await callWebhook(
         "value",
         { url: `https://api.example.com/\${TEST_SECRET}` },
         ctx,
@@ -236,19 +228,16 @@ describe("webhook rule", () => {
       expect(fetch).not.toHaveBeenCalled();
     });
 
-    it("keeps interpolating when it is not set, with one warning per variable", async () => {
-      process.env.TEST_SECRET = "value-1";
-      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
-      vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200 } as Response);
-      for (let i = 0; i < 2; i++) {
-        await webhook.validate("value", { url: `https://api.example.com/\${TEST_SECRET}` }, ctx);
-      }
-      expect(fetch).toHaveBeenCalledWith("https://api.example.com/value-1", expect.any(Object));
-      const warnings = warn.mock.calls.filter((call) =>
-        String(call[0]).includes("OPENTP_WEBHOOK_ENV"),
+    it("reads no variable when it is not set (0.10.0 default) and sends nothing", async () => {
+      process.env.TEST_SECRET = "do-not-send";
+      const result = await callWebhook(
+        "value",
+        { url: `https://api.example.com/\${TEST_SECRET}` },
+        ctx,
       );
-      expect(warnings).toHaveLength(1);
-      expect(String(warnings[0]?.[0])).toContain('variable="TEST_SECRET"');
+      expect(result).toMatchObject({ valid: false, code: "WEBHOOK_ENV_NOT_ALLOWED" });
+      expect(result.error).toContain("OPENTP_WEBHOOK_ENV=TEST_SECRET");
+      expect(fetch).not.toHaveBeenCalled();
     });
   });
 
@@ -259,7 +248,7 @@ describe("webhook rule", () => {
       return Promise.reject(error);
     });
 
-    const result = await webhook.validate(
+    const result = await callWebhook(
       "value",
       {
         url: "https://api.example.com/validate",
@@ -276,11 +265,7 @@ describe("webhook rule", () => {
   it("should handle network errors", async () => {
     vi.mocked(fetch).mockRejectedValueOnce(new Error("Network error"));
 
-    const result = await webhook.validate(
-      "value",
-      { url: "https://api.example.com/validate" },
-      ctx,
-    );
+    const result = await callWebhook("value", { url: "https://api.example.com/validate" }, ctx);
     expect(result.valid).toBe(false);
     expect(result.code).toBe("WEBHOOK_ERROR");
     expect(result.error).toContain("Network error");
@@ -295,7 +280,7 @@ describe("webhook rule", () => {
         status: 200,
       } as Response);
 
-    const result = await webhook.validate(
+    const result = await callWebhook(
       "value",
       {
         url: "https://api.example.com/validate",
@@ -314,7 +299,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    await webhook.validate(
+    await callWebhook(
       "cached-value",
       {
         url: "https://api.example.com/validate",
@@ -323,7 +308,7 @@ describe("webhook rule", () => {
       ctx,
     );
 
-    await webhook.validate(
+    await callWebhook(
       "cached-value",
       {
         url: "https://api.example.com/validate",
@@ -343,7 +328,7 @@ describe("webhook rule", () => {
       json: async () => ({ error: "Bad" }),
     } as unknown as Response);
 
-    const result1 = await webhook.validate(
+    const result1 = await callWebhook(
       "bad-value",
       {
         url: "https://api.example.com/validate",
@@ -352,7 +337,7 @@ describe("webhook rule", () => {
       ctx,
     );
 
-    const result2 = await webhook.validate(
+    const result2 = await callWebhook(
       "bad-value",
       {
         url: "https://api.example.com/validate",
@@ -372,7 +357,7 @@ describe("webhook rule", () => {
       status: 200,
     } as Response);
 
-    await webhook.validate(
+    await callWebhook(
       "value",
       {
         url: "https://api.example.com/validate",
@@ -381,7 +366,7 @@ describe("webhook rule", () => {
       ctx,
     );
 
-    await webhook.validate(
+    await callWebhook(
       "value",
       {
         url: "https://api.example.com/validate",
@@ -403,17 +388,34 @@ describe("webhook rule", () => {
       } as Response);
     });
 
-    await webhook.validate("test-value", { url: "https://api.example.com/validate" }, ctx);
+    await callWebhook("test-value", { url: "https://api.example.com/validate" }, ctx);
 
     expect(capturedBody).toBeDefined();
     const body = JSON.parse(capturedBody!);
     expect(body).toEqual({
       field: "test",
       value: "test-value",
+      params: true,
       context: {
         eventKey: "test::event",
         fieldPath: "test",
       },
     });
+  });
+
+  it("sends the params written in the plan and caches per params", async () => {
+    const bodies: unknown[] = [];
+    vi.mocked(fetch).mockImplementation((_url, options) => {
+      bodies.push(JSON.parse(options?.body as string));
+      return Promise.resolve({ ok: true, status: 200 } as Response);
+    });
+    const config = { url: "https://api.example.com/validate", cache: 60000 };
+    await callWebhook("v", config, ctx, { project: "WEB" });
+    await callWebhook("v", config, ctx, { project: "WEB" });
+    await callWebhook("v", config, ctx, { project: "APP" });
+    expect(bodies.map((body) => (body as { params: unknown }).params)).toEqual([
+      { project: "WEB" },
+      { project: "APP" },
+    ]);
   });
 });

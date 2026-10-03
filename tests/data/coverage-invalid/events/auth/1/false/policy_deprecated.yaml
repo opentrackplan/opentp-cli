@@ -1,0 +1,29 @@
+opentp: 2026-09
+
+event:
+  key: auth::policy_deprecated::p1::internal-false
+
+  # lifecycle.status does not exempt anything from policy
+  lifecycle:
+    status: deprecated
+
+  taxonomy:
+    action: Versions marked meta.deprecated are exempt from policy, other versions are not
+    action_detail: "test::policy"
+
+  payload:
+    web:
+      current: "1.1.0"
+      "1.0.0":
+        meta:
+          deprecated:
+            reason: Superseded by 1.1.0
+        schema:
+          application_id:
+            value: web-app
+          event_category: {}
+      "1.1.0":
+        $ref: "1.0.0"
+        schema:
+          event_name:
+            value: policy_deprecated

@@ -51,7 +51,7 @@ mv opentp-linux ~/.local/bin/opentp             # any directory on your PATH
 
 On Windows, compare `(Get-FileHash .\opentp.exe -Algorithm SHA256).Hash` with the `opentp.exe` line of `SHA256SUMS`.
 
-> **The npm package `opentp` is obsolete.** The CLI is not published to npm. The old npm package (last version 0.5.0, spec `2025-06`) cannot read `2026-01` plans; if you installed it, remove it with `npm uninstall -g opentp`.
+> **The npm package `opentp` is obsolete.** The CLI is not published to npm. The old npm package (last version 0.5.0, spec `2025-06`) cannot read current plans; if you installed it, remove it with `npm uninstall -g opentp`.
 
 **From source (development):** needs Node.js `^20.19.0 || >=22.12.0`.
 
@@ -65,12 +65,15 @@ node dist/index.cjs --version
 
 ## Quick Start
 
+opentp 0.10 reads OpenTrackPlan `2026-09` plans. If you have a `2026-01` plan, upgrade it with [`opentp migrate`](/cli/migrate) first.
+
 ### 1. Create `opentp.yaml`
 
-Create a configuration file in your project root:
+Create the plan file in your project root:
 
 ```yaml
-opentp: 2026-01
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-09/opentp.schema.json
+opentp: 2026-09
 
 info:
   title: My App Tracking Plan
@@ -89,18 +92,6 @@ spec:
       minLength: 3
       maxLength: 160
       pattern: "^[a-z0-9_]+::[a-z0-9_]+$"
-
-    x-opentp:
-      keygen:
-        template: "{area | slug}::{event | slug}"
-        transforms:
-          slug:
-            - lower
-            - trim
-            - replace:
-                from: " "
-                to: "_"
-            - truncate: 160
     taxonomy:
       area:
         title: Area
@@ -117,19 +108,54 @@ spec:
     payload:
       targets:
         all: [web, ios, android]
+      # The field catalog: the fields events may use
       schema:
-        event_name:
+        auth_method:
           type: string
-          required: true
+          enum: [email, google, github]
         dimension_1:
           type: string
           name: orgType
           title: Organization Type
           example: enterprise
 
+  # Common fields: part of every event on a target
+  targets:
+    all:
+      schema:
+        event_name:
+          type: string
+          policy: fixed
 ```
 
-### 2. Create Your First Event
+- `spec.events.payload.schema` is the **field catalog**: the fields an event may list. A catalog field is part of an event only when the event lists it.
+- `spec.targets.all.schema` holds the **common fields**: they are part of every event (`spec.targets.<target>.schema` for one target). `policy: fixed` says that every event must set the field's `value`.
+- An event may use only catalog fields and common fields: a typo such as `auth_methd` is an error, not a new field.
+
+### 2. Create `opentp.cli.yaml` (optional)
+
+Settings of the CLI live next to the plan in [`opentp.cli.yaml`](/cli/config). To have `opentp validate` check that every event key follows from its taxonomy, and `opentp fix` rewrite the ones that do not, add key generation:
+
+```yaml
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+opentp: 2026-09
+cli: ">=0.10 <0.11"
+
+keygen:
+  template: "{area | slug}::{event | slug}"
+  transforms:
+    slug:
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
+```
+
+`cli` pins the opentp versions that may run this plan, so a teammate or a CI job with another version gets a clear error instead of different results.
+
+### 3. Create Your First Event
 
 Create the folder structure and your first event file:
 
@@ -139,7 +165,8 @@ mkdir -p events/auth
 
 ```yaml
 # events/auth/login_click.yaml
-opentp: 2026-01
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-09/event.schema.json
+opentp: 2026-09
 
 event:
   key: auth::login_click
@@ -151,15 +178,16 @@ event:
     schema:
       event_name:
         value: login_click
-      dimension_1:
-        value: enterprise
+      auth_method:
+        required: true
+      dimension_1: {}
 ```
 
 Note: taxonomy fields referenced in `spec.paths.events.template` (e.g. `area`, `event`) are extracted from the file path, so you don't need to duplicate them in `event.taxonomy`.
 
-Use `name` when a payload field key is a transport or vendor slot, but the field has a clearer logical/code-facing name. `example` provides a representative value for documentation, mock data, and generators.
+Event fields take their `type` (and `enum`, `name`, `title`, `example`) from the catalog or the common fields, so an event writes only what it adds: a fixed `value`, `required: true`, or `{}` to list a field as it is. Use `name` when a payload field key is a transport or vendor slot, but the field has a clearer logical/code-facing name. `example` provides a representative value for documentation, mock data, and generators.
 
-### 3. Validate
+### 4. Validate
 
 Run validation to check your tracking plan:
 
@@ -167,7 +195,7 @@ Run validation to check your tracking plan:
 opentp validate
 ```
 
-Expected output:
+Expected output (on stderr):
 
 ```
 ✓ All events are valid count=1
@@ -179,7 +207,8 @@ A typical OpenTrackPlan project looks like this:
 
 ```
 my-tracking-plan/
-├── opentp.yaml                 # Main config
+├── opentp.yaml                 # The plan
+├── opentp.cli.yaml             # CLI settings (optional)
 ├── events/                     # Event definitions
 │   └── {area}/{event}.yaml
 └── dictionaries/               # Reusable enums
@@ -194,20 +223,21 @@ my-tracking-plan/
 Add JSON schema references for autocompletion:
 
 ```yaml
-# yaml-language-server: $schema=https://opentp.dev/schemas/2026-01/opentp.schema.json
-opentp: 2026-01
-...
+# yaml-language-server: $schema=https://opentp.dev/schemas/2026-09/opentp.schema.json
+opentp: 2026-09
 ```
 
 Available schemas:
 
-- `https://opentp.dev/schemas/2026-01/opentp.schema.json` — main config
-- `https://opentp.dev/schemas/2026-01/event.schema.json` — events
-- `https://opentp.dev/schemas/2026-01/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/2026-09/opentp.schema.json` — the plan (`opentp.yaml`)
+- `https://opentp.dev/schemas/2026-09/event.schema.json` — events
+- `https://opentp.dev/schemas/2026-09/dict.schema.json` — dictionaries
+- `https://opentp.dev/schemas/cli/opentp.cli.schema.json` — CLI settings (`opentp.cli.yaml`)
 
 ## Next Steps
 
 - [CLI Reference](/cli) — learn all available commands
+- [opentp.cli.yaml](/cli/config) — CLI settings: keygen, checks, plugins, generator runs
 - [Configuration](/schema/opentp-yaml) — detailed configuration options
 - [Transforms](/transforms) — string transformation pipelines
-- [Constraints & Rules](/rules) — portable constraints and CLI checks
+- [Checks](/rules) — portable constraints and checks

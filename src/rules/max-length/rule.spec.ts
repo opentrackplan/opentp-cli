@@ -30,4 +30,12 @@ describe("max-length rule", () => {
     const result = await maxLength.validate("", 5, ctx);
     expect(result.valid).toBe(true);
   });
+
+  it("counts Unicode code points, not UTF-16 code units", async () => {
+    // Two emoji are 2 code points (4 UTF-16 code units)
+    expect((await maxLength.validate("😀😀", 2, ctx)).valid).toBe(true);
+    expect(await maxLength.validate("😀😀😀", 2, ctx)).toMatchObject({
+      error: "Length 3 exceeds maximum 2",
+    });
+  });
 });

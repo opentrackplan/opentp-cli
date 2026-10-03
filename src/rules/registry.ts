@@ -73,10 +73,43 @@ export async function loadExternalRules(dirPath: string): Promise<void> {
 }
 
 /**
- * Validate a value against a set of rules
+ * Runs one rule for one value. A rule that throws (or rejects, or returns something that is not a
+ * result object) does not abort the run: the result is a `CHECK_FAILED` error
+ * "check <name> failed: <message>".
+ */
+export async function runRule(
+  name: string,
+  rule: RuleDefinition,
+  value: unknown,
+  params: unknown,
+  context: RuleContext,
+): Promise<RuleResult> {
+  let result: RuleResult;
+  try {
+    result = await rule.validate(value, params, context);
+  } catch (err) {
+    return {
+      valid: false,
+      error: `check ${name} failed: ${err instanceof Error ? err.message : String(err)}`,
+      code: "CHECK_FAILED",
+    };
+  }
+
+  if (typeof result !== "object" || result === null) {
+    return {
+      valid: false,
+      error: `check ${name} failed: expected a result object, got ${result === null ? "null" : typeof result}`,
+      code: "CHECK_FAILED",
+    };
+  }
+  return result;
+}
+
+/**
+ * Validate a value against a set of rules: `{ ruleName: params }`, in key order.
  *
- * A rule that throws (or rejects, or returns something that is not a result object) does not abort
- * the run: it produces a `CHECK_FAILED` error "check <name> failed: <message>" for this value.
+ * Params `false` disable a rule (it does not run). Unknown names are skipped silently: they are
+ * reported once per file by the static check-id scan of `opentp validate` (unknownCheck).
  *
  * @param value - The value to validate
  * @param rules - Rules configuration { ruleName: params }
@@ -91,37 +124,11 @@ export async function validateWithRules(
   const errors: RuleResult[] = [];
 
   for (const [ruleName, params] of Object.entries(rules)) {
+    if (params === false) continue;
     const rule = getRule(ruleName);
-    if (!rule) {
-      errors.push({
-        valid: false,
-        error: `Unknown check: ${ruleName}`,
-        code: "UNKNOWN_CHECK",
-      });
-      continue;
-    }
+    if (!rule) continue;
 
-    let result: RuleResult;
-    try {
-      result = await rule.validate(value, params, context);
-    } catch (err) {
-      errors.push({
-        valid: false,
-        error: `check ${ruleName} failed: ${err instanceof Error ? err.message : String(err)}`,
-        code: "CHECK_FAILED",
-      });
-      continue;
-    }
-
-    if (typeof result !== "object" || result === null) {
-      errors.push({
-        valid: false,
-        error: `check ${ruleName} failed: expected a result object, got ${result === null ? "null" : typeof result}`,
-        code: "CHECK_FAILED",
-      });
-      continue;
-    }
-
+    const result = await runRule(ruleName, rule, value, params, context);
     if (!result.valid) {
       errors.push(result);
     }

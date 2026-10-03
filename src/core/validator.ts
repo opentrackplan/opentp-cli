@@ -1,50 +1,169 @@
 import {
-  type FieldDefinition,
-  loadExternalRules,
-  type RuleContext,
-  validateFieldExclusivity,
-  validateWithRules,
-} from "../rules";
+  CHECK_ID_PATTERN,
+  CheckEnvironment,
+  DEFAULT_SEVERITIES,
+  invalidCheckIdMessage,
+  type Severities,
+} from "../checks";
+import { type CliTracker, getTrackerProblems, type TrackerOrigin } from "../cliconfig/tracker";
+import type { RuleContext } from "../rules";
 import type {
+  ChecksMap,
+  DictRef,
   Field,
+  KeygenConfig,
   OpenTPConfig,
-  PiiReservedFieldConfig,
+  PiiConfig,
   ResolvedEvent,
   TaxonomyField,
   ValidationError,
 } from "../types";
-import { getMatchTemplateProblems, isYamlMapping, patternToRegex } from "../util";
-import { type ConfigIssue, validateConfig } from "./config";
+import { getMatchTemplateProblems, getOwn, isYamlMapping, patternToRegex } from "../util";
+import { type ConfigIssue, fileVersionMessage, getKeygenProblems, validateConfig } from "./config";
+import {
+  codePointLength,
+  compilePattern,
+  matchesFormat,
+  numberConstraintProblems,
+  stringConstraintProblems,
+} from "./constraints";
 import type { DictionaryIssue } from "./dict";
 import { getDictValues } from "./dict";
+import { walkConfigDocument } from "./document";
 import type { EventLoadIssue } from "./event";
-import { mergeSchemaMaps, resolveEventPayload, UNVERSIONED_VERSION_KEY } from "./payload";
+import {
+  alwaysPresentMessage,
+  analyzeBaseLayers,
+  codeName,
+  codeNameMessage,
+  exampleProblems,
+  isDeprecatedVersion,
+  piiConfigOf,
+  piiProblems,
+  presenceReason,
+  targetIds,
+  typedKeywordProblems,
+  unknownFieldMessage,
+  type ValueProblem,
+  valueProblems,
+} from "./fields";
+import { findOverlaps, overlapIgnores, overlapMessageWeight, overlapResults } from "./overlap";
+import {
+  BaseFieldCache,
+  type DictionaryLookup,
+  type EffectiveField,
+  effectiveFields,
+  mergeBaseLayers,
+  resolveEventPayload,
+  UNVERSIONED_VERSION_KEY,
+} from "./payload";
 
-function buildIgnoreSet(ignoreChecks: Array<{ path: string }>): Set<string> {
-  const ignore = new Set<string>();
+/**
+ * What a validation run needs besides the plan: the opentp.cli.yaml settings that add strictness.
+ */
+export interface ValidationSettings {
+  /** `keygen` from opentp.cli.yaml: its problems are reported once, and keys are compared with it */
+  keygen?: KeygenConfig | null;
+  /** `tracker` from opentp.cli.yaml: its problems are reported once (event "opentp.cli.yaml") */
+  tracker?: CliTracker | null;
+  /**
+   * Application repository mode: which keys of `tracker` come from the plan repository's file (their
+   * problems carry its label)
+   */
+  trackerOrigin?: TrackerOrigin;
+  /** How check ids resolve (default: spec.checks, built-in and loaded rules, no bindings) */
+  checks?: CheckEnvironment;
+  /** Severity of the tool rules (default: warning) */
+  severities?: Severities;
+  /**
+   * Run the key checks of each event: a missing key, spec.events.key constraints and the keygen
+   * comparison (default true). Application repository mode turns them off: keys are checked in the
+   * plan repository.
+   */
+  keyChecks?: boolean;
+  /**
+   * Application repository mode: the plan is pinned by `plan:`, so an event file on the previous
+   * version asks for another plan ref instead of `opentp migrate` (default false)
+   */
+  pinnedPlan?: boolean;
+}
 
-  for (const { path } of ignoreChecks) {
-    ignore.add(path);
+interface ResolvedSettings {
+  keygen: KeygenConfig | null;
+  checks: CheckEnvironment;
+  severities: Severities;
+  keyChecks: boolean;
+  pinnedPlan: boolean;
+}
 
-    if (path === "key") ignore.add("event.key");
-    if (path === "event.key") ignore.add("key");
+function resolveSettings(config: OpenTPConfig, settings: ValidationSettings): ResolvedSettings {
+  return {
+    keygen: settings.keygen ?? null,
+    checks: settings.checks ?? new CheckEnvironment({ specChecks: config.spec.checks }),
+    severities: settings.severities ?? { ...DEFAULT_SEVERITIES },
+    keyChecks: settings.keyChecks ?? true,
+    pinnedPlan: settings.pinnedPlan ?? false,
+  };
+}
 
-    const payloadSchemaMatch = /^payload\.schema\.([^.]+)$/.exec(path);
-    if (payloadSchemaMatch) {
-      ignore.add(`payload::${payloadSchemaMatch[1]}`);
-    }
+/**
+ * The payload field that an ignore path (or a check path written in an event) names, 2026-09
+ * grammar:
+ * - `payload::<f>` names `<f>` (the only form for a field whose name contains `.`);
+ * - a path that starts with `payload.` and contains `.schema.` names the segment right after the
+ *   first `.schema.` (`payload.web.1.0.0.schema.user_id.value` -> `user_id`); the text before it
+ *   is not interpreted;
+ * - any other `payload.<seg>[.<more>]` names `<seg>` (later segments are keywords).
+ */
+export function payloadFieldOf(path: string): string | null {
+  if (path.startsWith("payload::")) return path.slice("payload::".length) || null;
+  if (!path.startsWith("payload.")) return null;
+  const schemaMarker = ".schema.";
+  const index = path.indexOf(schemaMarker);
+  const rest =
+    index === -1 ? path.slice("payload.".length) : path.slice(index + schemaMarker.length);
+  return rest.split(".")[0] || null;
+}
 
-    const schemaMarker = ".schema.";
-    if (path.startsWith("payload.") && path.includes(schemaMarker)) {
-      const schemaPath = path.slice(path.indexOf(schemaMarker) + schemaMarker.length);
-      const fieldName = schemaPath.split(".")[0];
-      if (fieldName) {
-        ignore.add(`payload::${fieldName}`);
-      }
-    }
+/** What an event's `ignore` list silences */
+interface IgnoreList {
+  /**
+   * Literal paths with their aliases: `key`/`event.key` (key checks), `opentp` (the version
+   * check), `taxonomy.<name>` (a taxonomy field or fragment), `overlap[.<key>]`
+   */
+  paths: Set<string>;
+  /** Payload fields whose field-level checks are silenced on every target and version */
+  fields: Set<string>;
+}
+
+function buildIgnoreList(ignoreChecks: Array<{ path: string }>): IgnoreList {
+  const paths = new Set<string>();
+  const fields = new Set<string>();
+
+  for (const entry of ignoreChecks) {
+    // Ignore entries are not schema-checked by the CLI: skip anything without a string path
+    const path = isYamlMapping(entry) ? entry.path : undefined;
+    if (typeof path !== "string") continue;
+    paths.add(path);
+
+    if (path === "key") paths.add("event.key");
+    if (path === "event.key") paths.add("key");
+
+    const field = payloadFieldOf(path);
+    if (field !== null) fields.add(field);
   }
 
-  return ignore;
+  return { paths, fields };
+}
+
+/**
+ * Whether an event's `ignore` list silences the overlap warnings between it and the event with key
+ * `otherKey`: `overlap` silences every overlap warning involving the event, `overlap.<key>` (all
+ * text after the first `overlap.`) silences one pair. Either event of a pair can carry it.
+ */
+export function ignoresOverlap(ignore: Array<{ path: string }>, otherKey: string): boolean {
+  const { all, keys } = overlapIgnores(ignore);
+  return all || keys.has(otherKey);
 }
 
 function normalizeEventKey(value: unknown): string | null {
@@ -66,9 +185,23 @@ export function configIssuesToErrors(issues: ConfigIssue[]): ValidationError[] {
 }
 
 /**
+ * Converts opentp.cli.yaml problems that do not stop a run (keygen and tracker problems) into
+ * validation errors with event "opentp.cli.yaml", or the issue's own `file` label (a tracker key of
+ * the plan repository's file in an application repository)
+ */
+export function cliConfigIssuesToErrors(issues: ConfigIssue[]): ValidationError[] {
+  return issues.map((issue) => ({
+    event: issue.file ?? "opentp.cli.yaml",
+    path: issue.path,
+    message: issue.message,
+    severity: "error" as const,
+  }));
+}
+
+/**
  * Converts dictionary and event-file load issues into validation errors, so that files that could
  * not be loaded fail the run. Dictionary issues are labelled "dictionaries/<file>", event issues
- * use the path relative to the events root (or "opentp.yaml").
+ * use the path relative to the events root (or "opentp.yaml" / "opentp.cli.yaml").
  */
 export function loadIssuesToErrors(
   dictionaryIssues: DictionaryIssue[],
@@ -90,39 +223,87 @@ export function loadIssuesToErrors(
   ];
 }
 
+/** Only the errors (warnings never fail a run) */
+export function errorsOnly(results: ValidationError[]): ValidationError[] {
+  return results.filter((result) => result.severity === "error");
+}
+
+/** Only the warnings */
+export function warningsOnly(results: ValidationError[]): ValidationError[] {
+  return results.filter((result) => result.severity === "warning");
+}
+
+/** Dictionary values by reference (null for an unknown dictionary) */
+function dictionaryLookup(
+  dictionaries: Map<string, (string | number | boolean)[]>,
+): DictionaryLookup {
+  return (dict) => getDictValues(dict, dictionaries);
+}
+
 /**
- * Validates all events and returns list of errors.
+ * Validates all events and returns their errors and warnings (see `severity`).
  *
- * Also reports configuration problems once, with event "opentp.yaml": validateConfig issues, and
- * taxonomy or fragment `dict` references to dictionaries that were not loaded.
+ * Also reports configuration problems once: validateConfig issues, keygen problems (event
+ * "opentp.cli.yaml"), `dict` references in opentp.yaml to dictionaries that were not loaded, the
+ * problems of the base layers that need dictionaries, the checks of values written in opentp.yaml,
+ * spec.checks entries that shadow a tool check, and check ids written in opentp.yaml. Overlapping
+ * events (tool rule `overlap`, see overlap.ts) are compared within `events` only.
+ *
+ * Plugins (rules, transform steps) must be loaded before: unknown check ids are reported here.
  *
  * @param events - Resolved events to validate
  * @param config - OpenTP configuration
  * @param dictionaries - Loaded dictionaries
- * @param externalRulesPaths - Additional paths to external rules directories
+ * @param settings - Settings from opentp.cli.yaml and the command line
  */
 export async function validateEvents(
   events: ResolvedEvent[],
   config: OpenTPConfig,
   dictionaries: Map<string, (string | number | boolean)[]>,
-  externalRulesPaths: string[] = [],
+  settings: ValidationSettings = {},
 ): Promise<ValidationError[]> {
-  // Load external rules from CLI only (spec does not define external loading)
-  const allRulesPaths = [...externalRulesPaths];
-
-  for (const rulePath of allRulesPaths) {
-    try {
-      await loadExternalRules(rulePath);
-    } catch (err) {
-      console.error(`Failed to load external rules from ${rulePath}:`, err);
-    }
-  }
-
+  const resolved = resolveSettings(config, settings);
+  const { checks, severities } = resolved;
   const errors: ValidationError[] = [];
+  const lookup = dictionaryLookup(dictionaries);
+  const configWalk = walkConfigDocument(config);
 
   // Config-level problems, reported once
   errors.push(...configIssuesToErrors(validateConfig(config)));
-  errors.push(...validateTaxonomyDictionaries(config, dictionaries));
+  errors.push(...cliConfigIssuesToErrors(getKeygenProblems(resolved.keygen, config)));
+  errors.push(
+    ...cliConfigIssuesToErrors(
+      getTrackerProblems(settings.tracker, config, settings.trackerOrigin),
+    ),
+  );
+  for (const ref of configWalk.dicts) {
+    if (!isKnownDictionary(ref, dictionaries)) {
+      errors.push({
+        event: "opentp.yaml",
+        path: ref.path,
+        message: unknownDictionaryMessage(ref),
+        severity: "error",
+      });
+    }
+  }
+  for (const issue of analyzeBaseLayers(config, lookup)) {
+    if (issue.dictionary) {
+      errors.push({
+        event: "opentp.yaml",
+        path: issue.path,
+        message: issue.message,
+        severity: "error",
+      });
+    }
+  }
+  errors.push(...(await checkBaseValues(config, checks)));
+  errors.push(...checks.shadowWarnings());
+  for (const ref of configWalk.checks) {
+    // An id that does not match the pattern is reported by validateConfig
+    if (!CHECK_ID_PATTERN.test(ref.id)) continue;
+    const problem = checks.classify(ref, severities.unknownCheck);
+    if (problem) errors.push({ event: "opentp.yaml", ...problem });
+  }
 
   // 0. Unique event keys across the tracking plan
   const seenKeys = new Map<string, string>();
@@ -143,92 +324,164 @@ export async function validateEvents(
     }
   }
 
-  // 1. Target base schema conflicts against global base schema
-  const globalBaseSchema = config.spec.events.payload.schema;
-
-  for (const [targetId, targetConfig] of Object.entries(config.spec.targets ?? {})) {
-    const targetSchema = targetConfig.schema;
-    if (!targetSchema) continue;
-
-    for (const [fieldName, targetField] of Object.entries(targetSchema)) {
-      const baseField = globalBaseSchema[fieldName];
-
-      if (!baseField) continue;
-
-      if (baseField.type && targetField.type && baseField.type !== targetField.type) {
-        errors.push({
-          event: "opentp.yaml",
-          path: `spec.targets.${targetId}.schema.${fieldName}`,
-          message: `Field type conflict: base '${baseField.type}' vs target '${targetField.type}'`,
-          severity: "error",
-        });
-      }
-
-      if (baseField.required === true && targetField.required === false) {
-        errors.push({
-          event: "opentp.yaml",
-          path: `spec.targets.${targetId}.schema.${fieldName}`,
-          message:
-            "Cannot weaken required field in target schema (base required=true, target required=false)",
-          severity: "error",
-        });
-      }
-
-      if (baseField.valueRequired === true && targetField.valueRequired === false) {
-        errors.push({
-          event: "opentp.yaml",
-          path: `spec.targets.${targetId}.schema.${fieldName}`,
-          message:
-            "Cannot weaken valueRequired field in target schema (base valueRequired=true, target valueRequired=false)",
-          severity: "error",
-        });
-      }
-    }
+  const baseFields = new BaseFieldCache(config, lookup);
+  for (const event of events) {
+    const eventErrors = await validateEvent(event, config, dictionaries, resolved, baseFields);
+    errors.push(...eventErrors);
   }
 
-  for (const event of events) {
-    const eventErrors = await validateEvent(event, config, dictionaries);
-    errors.push(...eventErrors);
+  // Events whose predicates can match the same hit (tool rule `overlap`; off skips the computation)
+  if (severities.overlap !== "off") {
+    const overlaps = findOverlaps(events, config, { lookup, baseFields });
+    // Bounded per event (summaries), but a large plan can still have more results than
+    // push(...) accepts as arguments
+    for (const result of overlapResults(overlaps, severities.overlap)) errors.push(result);
   }
 
   return errors;
 }
 
-/**
- * Reports taxonomy and fragment `dict` references to unknown dictionaries once, against
- * opentp.yaml (taxonomy definitions live only there). Per-event taxonomy checks skip unknown
- * dictionaries.
- */
-function validateTaxonomyDictionaries(
-  config: OpenTPConfig,
+/** Whether a `dict` reference names a loaded dictionary */
+function isKnownDictionary(
+  ref: DictRef,
   dictionaries: Map<string, (string | number | boolean)[]>,
-): ValidationError[] {
-  const errors: ValidationError[] = [];
-  const taxonomy: unknown = config.spec.events.taxonomy;
-  if (!isYamlMapping(taxonomy)) return errors;
+): boolean {
+  return typeof ref.dict === "string" && getDictValues(ref.dict, dictionaries) !== null;
+}
 
-  const check = (field: unknown, fieldPath: string): void => {
-    if (!isYamlMapping(field) || field.dict === undefined) return;
-    if (typeof field.dict !== "string" || getDictValues(field.dict, dictionaries) === null) {
-      errors.push({
-        event: "opentp.yaml",
-        path: `${fieldPath}.dict`,
-        message: `Unknown dictionary '${String(field.dict)}'`,
-        severity: "error",
-      });
+function unknownDictionaryMessage(ref: DictRef): string {
+  return `Unknown dictionary '${String(ref.dict)}'`;
+}
+
+/** A `checks` map of a definition, or null */
+function checksOf(definition: { checks?: unknown }): ChecksMap | null {
+  return isYamlMapping(definition.checks) ? definition.checks : null;
+}
+
+/**
+ * Runs checks on one value at `valuePath`; for an array value on each item (`<valuePath>[<i>]`).
+ * Returns the error messages by path.
+ */
+async function runValueChecks(
+  checks: CheckEnvironment,
+  value: unknown,
+  fieldChecks: ChecksMap,
+  context: { fieldName: string; eventKey: string },
+  valuePath: string,
+): Promise<Array<{ path: string; message: string }>> {
+  const results: Array<{ path: string; message: string }> = [];
+  if (Object.keys(fieldChecks).length === 0) return results;
+  const values = Array.isArray(value) ? value : [value];
+  for (const [index, item] of values.entries()) {
+    const itemPath = Array.isArray(value) ? `${valuePath}[${index}]` : valuePath;
+    const ctx: RuleContext = { ...context, fieldPath: itemPath };
+    for (const ruleError of await checks.run(item, fieldChecks, ctx)) {
+      results.push({ path: itemPath, message: ruleError.error || "Validation failed" });
+    }
+  }
+  return results;
+}
+
+/**
+ * The `checks` of the pii setting for one pii key: `spec.events.pii.kind`, `.masker` or
+ * `.schema.<key>` (null when there is none)
+ */
+function piiKeyChecks(piiConfig: PiiConfig | undefined, key: string): ChecksMap | null {
+  if (!piiConfig) return null;
+  const keyConfig =
+    key === "kind" || key === "masker"
+      ? piiConfig[key]
+      : isYamlMapping(piiConfig.schema)
+        ? getOwn(piiConfig.schema, key)
+        : undefined;
+  return isYamlMapping(keyConfig) ? checksOf(keyConfig) : null;
+}
+
+/**
+ * Runs the checks of the values written in opentp.yaml once, where they are written: every check
+ * on fixed values (each item of an array) and on pii values (the checks of the pii settings),
+ * portable checks on enum members and examples (the items of an array example also get the
+ * portable checks of `items`)
+ */
+async function checkBaseValues(
+  config: OpenTPConfig,
+  checks: CheckEnvironment,
+): Promise<ValidationError[]> {
+  const errors: ValidationError[] = [];
+  const seen = new Set<string>();
+  const piiConfig = piiConfigOf(config);
+  const push = (results: Array<{ path: string; message: string }>) => {
+    for (const { path, message } of results) {
+      errors.push({ event: "opentp.yaml", path, message, severity: "error" });
     }
   };
 
-  for (const [fieldName, field] of Object.entries(taxonomy)) {
-    const fieldPath = `spec.events.taxonomy.${fieldName}`;
-    check(field, fieldPath);
-    if (isYamlMapping(field) && isYamlMapping(field.fragments)) {
-      for (const [fragName, fragment] of Object.entries(field.fragments)) {
-        check(fragment, `${fieldPath}.fragments.${fragName}`);
+  for (const targetId of ["all", ...targetIds(config)]) {
+    for (const site of mergeBaseLayers(config, targetId).sites) {
+      if (seen.has(site.path)) continue;
+      seen.add(site.path);
+      const { written, merged, name } = site;
+      const context = { fieldName: name, eventKey: "" };
+      const fieldChecks = checksOf(merged);
+      const portable = fieldChecks ? checks.portableOnly(fieldChecks) : {};
+      const itemChecks = isYamlMapping(merged.items) ? checksOf(merged.items) : null;
+      const itemPortable = itemChecks ? checks.portableOnly(itemChecks) : {};
+
+      if (written.value !== undefined) {
+        const path = `${site.path}.value`;
+        if (fieldChecks)
+          push(await runValueChecks(checks, merged.value, fieldChecks, context, path));
+        if (itemChecks && Array.isArray(merged.value)) {
+          push(await runValueChecks(checks, merged.value, itemChecks, context, path));
+        }
+      }
+      // A top-level enum on an array is reported as such (typedKeywordProblems)
+      if (Array.isArray(written.enum) && merged.type !== "array") {
+        for (const [index, member] of written.enum.entries()) {
+          push(
+            await runValueChecks(checks, member, portable, context, `${site.path}.enum[${index}]`),
+          );
+        }
+      }
+      if (isYamlMapping(written.items) && Array.isArray(written.items.enum)) {
+        for (const [index, member] of written.items.enum.entries()) {
+          push(
+            await runValueChecks(
+              checks,
+              member,
+              itemPortable,
+              context,
+              `${site.path}.items.enum[${index}]`,
+            ),
+          );
+        }
+      }
+      if (written.example !== undefined) {
+        const path = `${site.path}.example`;
+        push(await runValueChecks(checks, written.example, portable, context, path));
+        if (Array.isArray(written.example)) {
+          push(await runValueChecks(checks, written.example, itemPortable, context, path));
+        }
+      }
+      // The pii values written here (each key's checks from spec.events.pii)
+      if (isYamlMapping(written.pii) && isYamlMapping(merged.pii)) {
+        for (const key of Object.keys(written.pii)) {
+          const keyChecks = piiKeyChecks(piiConfig, key);
+          const value = getOwn(merged.pii, key);
+          if (!keyChecks || value === undefined) continue;
+          push(
+            await runValueChecks(
+              checks,
+              value,
+              keyChecks,
+              { fieldName: `${name}.pii.${key}`, eventKey: "" },
+              `${site.path}.pii.${key}`,
+            ),
+          );
+        }
       }
     }
   }
-
   return errors;
 }
 
@@ -239,9 +492,58 @@ export async function validateEvent(
   event: ResolvedEvent,
   config: OpenTPConfig,
   dictionaries: Map<string, (string | number | boolean)[]>,
+  settings: ValidationSettings = {},
+  baseFields: BaseFieldCache = new BaseFieldCache(config, dictionaryLookup(dictionaries)),
 ): Promise<ValidationError[]> {
+  const resolved = resolveSettings(config, settings);
   const errors: ValidationError[] = [];
-  const ignore = buildIgnoreSet(event.ignore);
+  const ignoreList = buildIgnoreList(event.ignore);
+  const ignore = ignoreList.paths;
+  /** A check or dictionary reference in a payload field that the event ignores */
+  const ignoredField = (ref: { path: string; field?: string }): boolean => {
+    // The walk knows the field key; parsing the path would cut a name such as `a.b` at the dot
+    const field = ref.field ?? payloadFieldOf(ref.path);
+    return field !== null && ignoreList.fields.has(field);
+  };
+
+  // Problems found in the raw file while loading it (removed keywords, field definitions that are
+  // not mappings, `policy`, empty enums): never ignorable
+  for (const issue of event.fileIssues ?? []) {
+    errors.push({
+      event: event.relativePath,
+      path: issue.path,
+      message: issue.message,
+      severity: "error",
+    });
+  }
+
+  // Check ids written in the file: classified once per file, never per target or version. An id
+  // that does not match the pattern is invalid shape, not a field-level check: never ignorable.
+  for (const ref of event.checkRefs ?? []) {
+    if (!CHECK_ID_PATTERN.test(ref.id)) {
+      errors.push({
+        event: event.relativePath,
+        path: `${ref.path}.${ref.id}`,
+        message: invalidCheckIdMessage(ref.id),
+        severity: "error",
+      });
+      continue;
+    }
+    const problem = resolved.checks.classify(ref, resolved.severities.unknownCheck);
+    if (!problem || ignoredField(ref)) continue;
+    errors.push({ event: event.relativePath, ...problem });
+  }
+
+  // Dictionaries written in the file: an unknown one is reported once, where it is written
+  for (const ref of event.dictRefs ?? []) {
+    if (isKnownDictionary(ref, dictionaries) || ignoredField(ref)) continue;
+    errors.push({
+      event: event.relativePath,
+      path: ref.path,
+      message: unknownDictionaryMessage(ref),
+      severity: "error",
+    });
+  }
 
   // 0. Spec version validation (event file)
   if (!ignore.has("opentp")) {
@@ -257,14 +559,14 @@ export async function validateEvent(
       errors.push({
         event: event.relativePath,
         path: "opentp",
-        message: `Unsupported OpenTrackPlan schema version '${eventVersion}'. Expected '${config.opentp}'.`,
+        message: fileVersionMessage(eventVersion, config.opentp, resolved.pinnedPlan),
         severity: "error",
       });
     }
   }
 
-  // 1. Key validation
-  if (!ignore.has("key")) {
+  // 1. Key validation (not in application repository mode)
+  if (resolved.keyChecks && !ignore.has("key")) {
     const key = normalizeEventKey(event.key);
     const constraints = config.spec.events.key;
 
@@ -276,7 +578,8 @@ export async function validateEvent(
         severity: "error",
       });
     } else {
-      if (typeof constraints?.minLength === "number" && key.length < constraints.minLength) {
+      const keyLength = codePointLength(key);
+      if (typeof constraints?.minLength === "number" && keyLength < constraints.minLength) {
         errors.push({
           event: event.relativePath,
           path: "event.key",
@@ -285,7 +588,7 @@ export async function validateEvent(
         });
       }
 
-      if (typeof constraints?.maxLength === "number" && key.length > constraints.maxLength) {
+      if (typeof constraints?.maxLength === "number" && keyLength > constraints.maxLength) {
         errors.push({
           event: event.relativePath,
           path: "event.key",
@@ -295,7 +598,7 @@ export async function validateEvent(
       }
 
       if (typeof constraints?.pattern === "string") {
-        const re = compileRegex(constraints.pattern);
+        const re = compilePattern(constraints.pattern);
         // An invalid regex is reported once against opentp.yaml (validateConfig)
         if (re && !re.test(key)) {
           errors.push({
@@ -307,10 +610,19 @@ export async function validateEvent(
         }
       }
 
-      // Optional tooling-defined keygen: enforce generated key equality when configured.
-      // Without an expected key and without a per-event reason, keygen itself is misconfigured,
-      // which validateConfig reports once against opentp.yaml.
-      if (config.spec.events["x-opentp"]?.keygen) {
+      if (constraints?.format !== undefined && !matchesFormat(constraints.format, key)) {
+        errors.push({
+          event: event.relativePath,
+          path: "event.key",
+          message: `Value is not a valid ${constraints.format}`,
+          severity: "error",
+        });
+      }
+
+      // Key generation is a tool setting (opentp.cli.yaml): without it there is no key-equality
+      // check. Without an expected key and without a per-event reason, keygen itself is
+      // misconfigured, which validateEvents reports once against opentp.cli.yaml.
+      if (resolved.keygen) {
         if (typeof event.expectedKey !== "string") {
           if (event.keygenError) {
             errors.push({
@@ -338,11 +650,19 @@ export async function validateEvent(
     config.spec.events.taxonomy,
     dictionaries,
     ignore,
+    resolved.checks,
   );
   errors.push(...taxonomyErrors);
 
   // 3. Payload validation
-  const payloadErrors = await validatePayload(event, config, dictionaries, ignore);
+  const payloadErrors = await validatePayload(
+    event,
+    config,
+    dictionaries,
+    ignoreList,
+    resolved.checks,
+    baseFields,
+  );
   errors.push(...payloadErrors);
 
   return errors;
@@ -356,6 +676,7 @@ async function validateTaxonomy(
   taxonomyConfig: Record<string, TaxonomyField>,
   dictionaries: Map<string, (string | number | boolean)[]>,
   ignore: Set<string>,
+  checks: CheckEnvironment,
 ): Promise<ValidationError[]> {
   const errors: ValidationError[] = [];
 
@@ -420,92 +741,37 @@ async function validateTaxonomy(
       : { ok: false, message: `Expected boolean, got ${typeof value}` };
   }
 
-  function validateStringConstraints(
-    value: string,
-    fieldConfig: TaxonomyField,
-    checkPath: string,
-  ): void {
-    if (typeof fieldConfig.minLength === "number" && value.length < fieldConfig.minLength) {
-      errors.push({
-        event: event.relativePath,
-        path: checkPath,
-        message: `Expected length >= ${fieldConfig.minLength}`,
-        severity: "error",
-      });
-    }
-    if (typeof fieldConfig.maxLength === "number" && value.length > fieldConfig.maxLength) {
-      errors.push({
-        event: event.relativePath,
-        path: checkPath,
-        message: `Expected length <= ${fieldConfig.maxLength}`,
-        severity: "error",
-      });
-    }
-    if (typeof fieldConfig.pattern === "string") {
-      const re = compileRegex(fieldConfig.pattern);
-      // An invalid regex is reported once against opentp.yaml (validateConfig)
-      if (re && !re.test(value)) {
-        errors.push({
-          event: event.relativePath,
-          path: checkPath,
-          message: `Value does not match pattern ${JSON.stringify(fieldConfig.pattern)}`,
-          severity: "error",
-        });
-      }
+  function push(checkPath: string, messages: string[]): void {
+    for (const message of messages) {
+      errors.push({ event: event.relativePath, path: checkPath, message, severity: "error" });
     }
   }
 
-  function validateNumberConstraints(
-    value: number,
+  /** Constraints (string or number) and checks of one taxonomy field or fragment value */
+  async function validateValue(
+    value: string | number | boolean,
     fieldConfig: TaxonomyField,
+    name: string,
     checkPath: string,
-  ): void {
-    if (typeof fieldConfig.minimum === "number" && value < fieldConfig.minimum) {
-      errors.push({
-        event: event.relativePath,
-        path: checkPath,
-        message: `Expected >= ${fieldConfig.minimum}`,
-        severity: "error",
-      });
+  ): Promise<void> {
+    // JSON-Schema-like constraints (an invalid regex is reported once against opentp.yaml)
+    if (fieldConfig.type === "string" && typeof value === "string") {
+      push(checkPath, stringConstraintProblems(value, fieldConfig, { invalidPattern: "skip" }));
+    } else if (
+      (fieldConfig.type === "number" || fieldConfig.type === "integer") &&
+      typeof value === "number"
+    ) {
+      push(checkPath, numberConstraintProblems(value, fieldConfig));
     }
-    if (typeof fieldConfig.maximum === "number" && value > fieldConfig.maximum) {
-      errors.push({
-        event: event.relativePath,
-        path: checkPath,
-        message: `Expected <= ${fieldConfig.maximum}`,
-        severity: "error",
-      });
-    }
-    if (typeof fieldConfig.exclusiveMinimum === "number" && value <= fieldConfig.exclusiveMinimum) {
-      errors.push({
-        event: event.relativePath,
-        path: checkPath,
-        message: `Expected > ${fieldConfig.exclusiveMinimum}`,
-        severity: "error",
-      });
-    }
-    if (typeof fieldConfig.exclusiveMaximum === "number" && value >= fieldConfig.exclusiveMaximum) {
-      errors.push({
-        event: event.relativePath,
-        path: checkPath,
-        message: `Expected < ${fieldConfig.exclusiveMaximum}`,
-        severity: "error",
-      });
-    }
-    if (typeof fieldConfig.multipleOf === "number" && Number.isFinite(fieldConfig.multipleOf)) {
-      const m = fieldConfig.multipleOf;
-      if (m > 0) {
-        const q = value / m;
-        const rounded = Math.round(q);
-        if (!Number.isFinite(q) || Math.abs(q - rounded) > 1e-12) {
-          errors.push({
-            event: event.relativePath,
-            path: checkPath,
-            message: `Expected multipleOf ${m}`,
-            severity: "error",
-          });
-        }
-      }
+
+    const fieldChecks = checksOf(fieldConfig);
+    if (fieldChecks) {
+      const ctx: RuleContext = { fieldName: name, fieldPath: checkPath, eventKey: event.key };
+      const ruleErrors = await checks.run(value, fieldChecks, ctx);
+      push(
+        checkPath,
+        ruleErrors.map((ruleError) => ruleError.error || "Validation failed"),
+      );
     }
   }
 
@@ -544,8 +810,12 @@ async function validateTaxonomy(
 
     const typedValue = value as string | number | boolean;
 
-    // Enum check (inline values)
-    if (fieldConfig.enum && !fieldConfig.enum.includes(typedValue)) {
+    // Enum check (inline values; an empty enum is reported once against opentp.yaml)
+    if (
+      Array.isArray(fieldConfig.enum) &&
+      fieldConfig.enum.length > 0 &&
+      !fieldConfig.enum.includes(typedValue)
+    ) {
       errors.push({
         event: event.relativePath,
         path: checkPath,
@@ -568,34 +838,7 @@ async function validateTaxonomy(
       }
     }
 
-    // JSON-Schema-like constraints
-    if (fieldConfig.type === "string" && typeof typedValue === "string") {
-      validateStringConstraints(typedValue, fieldConfig, checkPath);
-    } else if (
-      (fieldConfig.type === "number" || fieldConfig.type === "integer") &&
-      typeof typedValue === "number"
-    ) {
-      validateNumberConstraints(typedValue, fieldConfig, checkPath);
-    }
-
-    // Tooling-defined checks (x-opentp)
-    const checks = fieldConfig["x-opentp"]?.checks;
-    if (checks) {
-      const ctx: RuleContext = {
-        fieldName,
-        fieldPath: checkPath,
-        eventKey: event.key,
-      };
-      const ruleErrors = await validateWithRules(typedValue, checks, ctx);
-      for (const ruleError of ruleErrors) {
-        errors.push({
-          event: event.relativePath,
-          path: checkPath,
-          message: ruleError.error || "Validation failed",
-          severity: "error",
-        });
-      }
-    }
+    await validateValue(typedValue, fieldConfig, fieldName, checkPath);
 
     // Composite fragments check (template + fragments). An unusable template or fragments
     // definition is reported once against opentp.yaml (validateConfig).
@@ -651,7 +894,11 @@ async function validateTaxonomy(
 
         const typedFragValue = fragValue as string | number | boolean;
 
-        if (fragConfig.enum && !fragConfig.enum.includes(typedFragValue)) {
+        if (
+          Array.isArray(fragConfig.enum) &&
+          fragConfig.enum.length > 0 &&
+          !fragConfig.enum.includes(typedFragValue)
+        ) {
           errors.push({
             event: event.relativePath,
             path: fragCheckPath,
@@ -673,32 +920,7 @@ async function validateTaxonomy(
           }
         }
 
-        if (fragConfig.type === "string" && typeof typedFragValue === "string") {
-          validateStringConstraints(typedFragValue, fragConfig, fragCheckPath);
-        } else if (
-          (fragConfig.type === "number" || fragConfig.type === "integer") &&
-          typeof typedFragValue === "number"
-        ) {
-          validateNumberConstraints(typedFragValue, fragConfig, fragCheckPath);
-        }
-
-        const fragChecks = fragConfig["x-opentp"]?.checks;
-        if (fragChecks) {
-          const ctx: RuleContext = {
-            fieldName: fragName,
-            fieldPath: fragCheckPath,
-            eventKey: event.key,
-          };
-          const ruleErrors = await validateWithRules(typedFragValue, fragChecks, ctx);
-          for (const ruleError of ruleErrors) {
-            errors.push({
-              event: event.relativePath,
-              path: fragCheckPath,
-              message: ruleError.error || "Validation failed",
-              severity: "error",
-            });
-          }
-        }
+        await validateValue(typedFragValue, fragConfig, fragName, fragCheckPath);
       }
     }
   }
@@ -706,22 +928,61 @@ async function validateTaxonomy(
   return errors;
 }
 
+/** Why a policy is not satisfied by an event version, or null */
+function policyNeed(
+  policy: string,
+  written: Field | undefined,
+  restrictedAfterPolicy: boolean,
+  fixedAfterPolicy: boolean,
+  type: unknown,
+): string | null {
+  if (written === undefined) return "every event must list it";
+  if (
+    policy === "restricted" &&
+    !restrictedAfterPolicy &&
+    written.value === undefined &&
+    written.enum === undefined &&
+    written.dict === undefined
+  ) {
+    // enum and dict are not allowed on arrays: only a value restricts an array field
+    return type === "array"
+      ? "every event must restrict it with a value (enum and dict are not allowed on arrays)"
+      : "every event must restrict it with value, enum or dict";
+  }
+  if (policy === "fixed" && !fixedAfterPolicy && written.value === undefined) {
+    return "every event must set its value";
+  }
+  return null;
+}
+
+/** Whether the code-facing name of an effective field comes from the event layer */
+function namedByEvent(entry: EffectiveField): boolean {
+  return entry.event !== undefined && (entry.event.name !== undefined || !entry.base?.common);
+}
+
 /**
- * Validates payload of an event
+ * Validates the payload of an event per covered target id and version (2026-09 field semantics):
+ * closed vocabulary, the event layer merged over the catalog and common fields (type conflicts,
+ * fixed values, weakened `required`, narrowing), presence, values, enum members and examples
+ * written in the event, checks, pii, policy and code-facing names.
  */
 async function validatePayload(
   event: ResolvedEvent,
   config: OpenTPConfig,
   dictionaries: Map<string, (string | number | boolean)[]>,
-  ignore: Set<string>,
+  ignore: IgnoreList,
+  checks: CheckEnvironment,
+  baseFields: BaseFieldCache,
 ): Promise<ValidationError[]> {
   const errors: ValidationError[] = [];
+  const lookup = dictionaryLookup(dictionaries);
+  const piiConfig = piiConfigOf(config);
 
-  const baseSchema = config.spec.events.payload.schema;
-  const piiConfig = config.spec.events.pii;
+  const { payload: resolvedPayload, issues } = resolveEventPayload(event.payload, config, {
+    dictionaryValues: lookup,
+  });
 
-  const { payload: resolvedPayload, issues } = resolveEventPayload(event.payload, config);
-
+  // Payload resolution problems (selectors, current, aliases, $ref): never ignorable
   for (const issue of issues) {
     errors.push({
       event: event.relativePath,
@@ -731,810 +992,204 @@ async function validatePayload(
     });
   }
 
-  function isFiniteNumber(value: unknown): value is number {
-    return typeof value === "number" && Number.isFinite(value);
-  }
-
-  function isInteger(value: unknown): value is number {
-    return isFiniteNumber(value) && Number.isInteger(value);
-  }
-
-  function validateStringConstraints(value: string, field: Field, path: string): void {
-    if (typeof field.minLength === "number" && value.length < field.minLength) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected length >= ${field.minLength}`,
-        severity: "error",
-      });
-    }
-    if (typeof field.maxLength === "number" && value.length > field.maxLength) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected length <= ${field.maxLength}`,
-        severity: "error",
-      });
-    }
-    if (typeof field.pattern === "string") {
-      try {
-        const re = new RegExp(field.pattern, "u");
-        if (!re.test(value)) {
-          errors.push({
-            event: event.relativePath,
-            path,
-            message: `Value does not match pattern ${JSON.stringify(field.pattern)}`,
-            severity: "error",
-          });
-        }
-      } catch (e) {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Invalid regex pattern ${JSON.stringify(field.pattern)}: ${String(e)}`,
-          severity: "error",
-        });
-      }
+  function push(path: string, messages: string[]): void {
+    for (const message of messages) {
+      errors.push({ event: event.relativePath, path, message, severity: "error" });
     }
   }
 
-  function validateNumberConstraints(
-    value: number,
-    field: Field,
-    path: string,
-    isInt: boolean,
-  ): void {
-    if (!Number.isFinite(value)) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: "Expected finite number",
-        severity: "error",
-      });
-      return;
-    }
-
-    if (isInt && !Number.isInteger(value)) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: "Expected integer",
-        severity: "error",
-      });
-    }
-
-    if (typeof field.minimum === "number" && value < field.minimum) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected >= ${field.minimum}`,
-        severity: "error",
-      });
-    }
-    if (typeof field.maximum === "number" && value > field.maximum) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected <= ${field.maximum}`,
-        severity: "error",
-      });
-    }
-    if (typeof field.exclusiveMinimum === "number" && value <= field.exclusiveMinimum) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected > ${field.exclusiveMinimum}`,
-        severity: "error",
-      });
-    }
-    if (typeof field.exclusiveMaximum === "number" && value >= field.exclusiveMaximum) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected < ${field.exclusiveMaximum}`,
-        severity: "error",
-      });
-    }
-
-    if (typeof field.multipleOf === "number" && Number.isFinite(field.multipleOf)) {
-      const m = field.multipleOf;
-      if (m > 0) {
-        const q = value / m;
-        const rounded = Math.round(q);
-        if (!Number.isFinite(q) || Math.abs(q - rounded) > 1e-12) {
-          errors.push({
-            event: event.relativePath,
-            path,
-            message: `Expected multipleOf ${m}`,
-            severity: "error",
-          });
-        }
-      }
-    }
+  function pushProblems(path: string, problems: ValueProblem[]): void {
+    for (const problem of problems) push(`${path}${problem.suffix}`, [problem.message]);
   }
 
-  function validateArrayItems(value: unknown, itemSchema: Field["items"], path: string): void {
-    if (!itemSchema) return;
-
-    const type = itemSchema.type;
-
-    if (type === "string") {
-      if (typeof value !== "string") {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Expected string item, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-      validateStringConstraints(value, itemSchema as unknown as Field, path);
-    } else if (type === "number") {
-      if (!isFiniteNumber(value)) {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Expected number item, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-      validateNumberConstraints(value, itemSchema as unknown as Field, path, false);
-    } else if (type === "integer") {
-      if (!isInteger(value)) {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Expected integer item, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-      validateNumberConstraints(value, itemSchema as unknown as Field, path, true);
-    } else if (type === "boolean") {
-      if (typeof value !== "boolean") {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Expected boolean item, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-    }
-
-    if (itemSchema.enum && !itemSchema.enum.includes(value as never)) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Item value '${String(value)}' is not in allowed enum`,
-        severity: "error",
-      });
-    }
-
-    if (itemSchema.dict) {
-      const allowed = getDictValues(itemSchema.dict, dictionaries);
-      if (!allowed) {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Unknown dictionary '${itemSchema.dict}'`,
-          severity: "error",
-        });
-      } else if (!allowed.includes(value as never)) {
-        errors.push({
-          event: event.relativePath,
-          path,
-          message: `Item value '${String(value)}' is not in dictionary '${itemSchema.dict}'`,
-          severity: "error",
-        });
-      }
-    }
-  }
-
-  function validateArrayConstraints(value: unknown[], field: Field, path: string): void {
-    if (typeof field.minItems === "number" && value.length < field.minItems) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected minItems ${field.minItems}`,
-        severity: "error",
-      });
-    }
-    if (typeof field.maxItems === "number" && value.length > field.maxItems) {
-      errors.push({
-        event: event.relativePath,
-        path,
-        message: `Expected maxItems ${field.maxItems}`,
-        severity: "error",
-      });
-    }
-    if (field.uniqueItems) {
-      const seen = new Set<string>();
-      for (const item of value) {
-        const key = JSON.stringify(item);
-        if (seen.has(key)) {
-          errors.push({
-            event: event.relativePath,
-            path,
-            message: "Expected uniqueItems",
-            severity: "error",
-          });
-          break;
-        }
-        seen.add(key);
-      }
-    }
-  }
-
-  function validateEffectiveValue(value: unknown, field: Field, valuePath: string): void {
-    const type = field.type;
-
-    if (Array.isArray(value)) {
-      if (type && type !== "array") {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `Expected ${type} value, got array`,
-          severity: "error",
-        });
-        return;
-      }
-
-      validateArrayConstraints(value, field, valuePath);
-
-      for (let i = 0; i < value.length; i += 1) {
-        const item = value[i];
-        const itemPath = `${valuePath}[${i}]`;
-        if (item === null) {
-          errors.push({
-            event: event.relativePath,
-            path: itemPath,
-            message: "Array items must be scalar (null is not allowed)",
-            severity: "error",
-          });
-          continue;
-        }
-        if (typeof item !== "string" && typeof item !== "number" && typeof item !== "boolean") {
-          errors.push({
-            event: event.relativePath,
-            path: itemPath,
-            message: `Array items must be scalar, got ${typeof item}`,
-            severity: "error",
-          });
-          continue;
-        }
-        if (typeof item === "number" && !Number.isFinite(item)) {
-          errors.push({
-            event: event.relativePath,
-            path: itemPath,
-            message: "Array items must be finite numbers",
-            severity: "error",
-          });
-          continue;
-        }
-        validateArrayItems(item, field.items, itemPath);
-      }
-
-      return;
-    }
-
-    if (
-      value === null ||
-      (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean")
-    ) {
-      errors.push({
-        event: event.relativePath,
-        path: valuePath,
-        message: `Expected scalar value, got ${value === null ? "null" : typeof value}`,
-        severity: "error",
-      });
-      return;
-    }
-
-    if (type === "string") {
-      if (typeof value !== "string") {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `Expected string value, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-      validateStringConstraints(value, field, valuePath);
-    } else if (type === "number") {
-      if (!isFiniteNumber(value)) {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `Expected number value, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-      validateNumberConstraints(value, field, valuePath, false);
-    } else if (type === "integer") {
-      if (!isInteger(value)) {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `Expected integer value, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-      validateNumberConstraints(value, field, valuePath, true);
-    } else if (type === "boolean") {
-      if (typeof value !== "boolean") {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `Expected boolean value, got ${typeof value}`,
-          severity: "error",
-        });
-        return;
-      }
-    } else if (type === "array") {
-      errors.push({
-        event: event.relativePath,
-        path: valuePath,
-        message: "Expected array value",
-        severity: "error",
-      });
-    } else {
-      // Untyped value: validate constraints opportunistically
-      if (typeof value === "string") validateStringConstraints(value, field, valuePath);
-      if (typeof value === "number") validateNumberConstraints(value, field, valuePath, false);
-    }
-  }
-
-  async function validatePii(
+  async function runChecks(
+    value: unknown,
+    fieldChecks: ChecksMap | null,
     fieldName: string,
-    schemaFieldPath: string,
-    pii: Record<string, unknown>,
+    valuePath: string,
   ): Promise<void> {
-    if (!piiConfig) return;
-
-    const kind = pii.kind;
-    const masker = pii.masker;
-
-    if (piiConfig.kind?.required && typeof kind !== "string") {
-      errors.push({
-        event: event.relativePath,
-        path: `${schemaFieldPath}.pii.kind`,
-        message: "pii.kind is required",
-        severity: "error",
-      });
+    if (!fieldChecks) return;
+    const context = { fieldName, eventKey: event.key };
+    for (const result of await runValueChecks(checks, value, fieldChecks, context, valuePath)) {
+      push(result.path, [result.message]);
     }
-    if (piiConfig.masker?.required && typeof masker !== "string") {
-      errors.push({
-        event: event.relativePath,
-        path: `${schemaFieldPath}.pii.masker`,
-        message: "pii.masker is required",
-        severity: "error",
-      });
+  }
+
+  /**
+   * The checks of what the event layer writes: its value, enum members, item enum members,
+   * example and pii values, against the effective field
+   */
+  async function checkEventField(
+    name: string,
+    field: Field,
+    written: Field,
+    fieldPath: string,
+    writesExample: boolean,
+  ): Promise<void> {
+    const fieldChecks = checksOf(field);
+    const portable = fieldChecks ? checks.portableOnly(fieldChecks) : null;
+    const items = isYamlMapping(field.items) ? (field.items as Field) : null;
+    const itemChecks = items ? checksOf(items) : null;
+
+    if (written.value !== undefined) {
+      const valuePath = `${fieldPath}.value`;
+      pushProblems(valuePath, valueProblems(field.value, field, { lookup }));
+      await runChecks(field.value, fieldChecks, name, valuePath);
+      if (Array.isArray(field.value)) await runChecks(field.value, itemChecks, name, valuePath);
+    } else if (field.value !== undefined && isYamlMapping(written.checks)) {
+      // Checks the event adds to an inherited fixed value
+      await runChecks(field.value, written.checks, name, `${fieldPath}.value`);
     }
 
-    async function validateReservedString(
-      value: unknown,
-      configField: PiiReservedFieldConfig,
-      valuePath: string,
-      name: string,
-    ): Promise<void> {
-      if (value === undefined) return;
-      if (typeof value !== "string") {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `${name} must be a string`,
-          severity: "error",
-        });
-        return;
-      }
-
-      if (configField.enum && !configField.enum.includes(value)) {
-        errors.push({
-          event: event.relativePath,
-          path: valuePath,
-          message: `Value '${value}' is not in allowed ${name} enum`,
-          severity: "error",
-        });
-      }
-
-      if (configField.dict) {
-        const allowed = getDictValues(configField.dict, dictionaries);
-        if (!allowed) {
-          errors.push({
-            event: event.relativePath,
-            path: valuePath,
-            message: `Unknown dictionary '${configField.dict}'`,
-            severity: "error",
-          });
-        } else if (!allowed.includes(value)) {
-          errors.push({
-            event: event.relativePath,
-            path: valuePath,
-            message: `Value '${value}' is not in dictionary '${configField.dict}'`,
-            severity: "error",
-          });
-        }
-      }
-
-      validateStringConstraints(value, configField as unknown as Field, valuePath);
-
-      const checks = configField["x-opentp"]?.checks;
-      if (checks) {
-        const ctx: RuleContext = {
-          fieldName: `${fieldName}.${name}`,
-          fieldPath: valuePath,
-          eventKey: event.key,
-        };
-        const ruleErrors = await validateWithRules(value, checks, ctx);
-        for (const ruleError of ruleErrors) {
-          errors.push({
-            event: event.relativePath,
-            path: valuePath,
-            message: ruleError.error || "Validation failed",
-            severity: "error",
-          });
-        }
+    // A top-level enum on an array is reported as such (typedKeywordProblems)
+    if (Array.isArray(written.enum) && field.type !== "array") {
+      for (const [index, member] of written.enum.entries()) {
+        const memberPath = `${fieldPath}.enum[${index}]`;
+        pushProblems(memberPath, valueProblems(member, field, { lookup }));
+        await runChecks(member, portable, name, memberPath);
       }
     }
 
-    if (piiConfig.kind) {
-      await validateReservedString(kind, piiConfig.kind, `${schemaFieldPath}.pii.kind`, "pii.kind");
-    }
-    if (piiConfig.masker) {
-      await validateReservedString(
-        masker,
-        piiConfig.masker,
-        `${schemaFieldPath}.pii.masker`,
-        "pii.masker",
-      );
+    if (items && isYamlMapping(written.items) && Array.isArray(written.items.enum)) {
+      const itemPortable = itemChecks ? checks.portableOnly(itemChecks) : null;
+      for (const [index, member] of written.items.enum.entries()) {
+        const memberPath = `${fieldPath}.items.enum[${index}]`;
+        pushProblems(memberPath, valueProblems(member, items, { lookup }));
+        await runChecks(member, itemPortable, name, memberPath);
+      }
     }
 
-    if (piiConfig.schema) {
-      for (const [metaName, metaConfig] of Object.entries(piiConfig.schema)) {
-        const metaValue = pii[metaName];
-        const metaPath = `${schemaFieldPath}.pii.${metaName}`;
+    // An example inherited through $ref is checked in the version that writes it
+    if (written.example !== undefined && writesExample) {
+      const examplePath = `${fieldPath}.example`;
+      pushProblems(examplePath, exampleProblems(written.example, field, { lookup }));
+      await runChecks(written.example, portable, name, examplePath);
+      // Each item of an array example also gets the portable checks of `items`
+      if (Array.isArray(written.example) && itemChecks) {
+        await runChecks(written.example, checks.portableOnly(itemChecks), name, examplePath);
+      }
+    }
 
-        if (metaConfig.required && metaValue === undefined) {
-          errors.push({
-            event: event.relativePath,
-            path: metaPath,
-            message: `Required pii metadata '${metaName}' is missing`,
-            severity: "error",
-          });
-          continue;
-        }
-        if (metaValue === undefined) continue;
-
-        const typeOk =
-          (metaConfig.type === "string" && typeof metaValue === "string") ||
-          (metaConfig.type === "number" &&
-            typeof metaValue === "number" &&
-            Number.isFinite(metaValue)) ||
-          (metaConfig.type === "integer" &&
-            typeof metaValue === "number" &&
-            Number.isInteger(metaValue)) ||
-          (metaConfig.type === "boolean" && typeof metaValue === "boolean");
-
-        if (!typeOk) {
-          errors.push({
-            event: event.relativePath,
-            path: metaPath,
-            message: `Expected ${metaConfig.type}, got ${typeof metaValue}`,
-            severity: "error",
-          });
-          continue;
-        }
-
-        if (metaConfig.enum && !metaConfig.enum.includes(metaValue as never)) {
-          errors.push({
-            event: event.relativePath,
-            path: metaPath,
-            message: `Value '${String(metaValue)}' is not in allowed enum`,
-            severity: "error",
-          });
-        }
-
-        if (metaConfig.dict) {
-          const allowed = getDictValues(metaConfig.dict, dictionaries);
-          if (!allowed) {
-            errors.push({
-              event: event.relativePath,
-              path: metaPath,
-              message: `Unknown dictionary '${metaConfig.dict}'`,
-              severity: "error",
-            });
-          } else if (!allowed.includes(metaValue as never)) {
-            errors.push({
-              event: event.relativePath,
-              path: metaPath,
-              message: `Value '${String(metaValue)}' is not in dictionary '${metaConfig.dict}'`,
-              severity: "error",
-            });
-          }
-        }
-
-        if (metaConfig.type === "string" && typeof metaValue === "string") {
-          validateStringConstraints(metaValue, metaConfig as unknown as Field, metaPath);
-        } else if (
-          (metaConfig.type === "number" || metaConfig.type === "integer") &&
-          typeof metaValue === "number"
-        ) {
-          validateNumberConstraints(
-            metaValue,
-            metaConfig as unknown as Field,
-            metaPath,
-            metaConfig.type === "integer",
-          );
-        }
-
-        const metaChecks = metaConfig["x-opentp"]?.checks;
-        if (metaChecks) {
-          const ctx: RuleContext = {
-            fieldName: `${fieldName}.pii.${metaName}`,
-            fieldPath: metaPath,
-            eventKey: event.key,
-          };
-          const ruleErrors = await validateWithRules(metaValue, metaChecks, ctx);
-          for (const ruleError of ruleErrors) {
-            errors.push({
-              event: event.relativePath,
-              path: metaPath,
-              message: ruleError.error || "Validation failed",
-              severity: "error",
-            });
-          }
-        }
+    if (piiConfig && isYamlMapping(written.pii) && isYamlMapping(field.pii)) {
+      const keys = new Set(Object.keys(written.pii));
+      pushProblems(fieldPath, piiProblems(field.pii, piiConfig, { required: true, keys, lookup }));
+      // Checks apply to the pii values written in the event
+      for (const key of keys) {
+        const value = getOwn(field.pii, key);
+        if (value === undefined) continue;
+        await runChecks(
+          value,
+          piiKeyChecks(piiConfig, key),
+          `${name}.pii.${key}`,
+          `${fieldPath}.pii.${key}`,
+        );
       }
     }
   }
+
+  // Problems reported once per file where they are written (not per target and version)
+  const reportedOnce = new Set<string>();
+  const pushOnce = (path: string, message: string) => {
+    const id = `${path}\u0000${message}`;
+    if (reportedOnce.has(id)) return;
+    reportedOnce.add(id);
+    push(path, [message]);
+  };
 
   for (const [targetId, targetPayload] of Object.entries(resolvedPayload.targets)) {
-    const targetBase = config.spec.targets?.[targetId]?.schema ?? {};
-    const baseForTarget = mergeSchemaMaps(baseSchema, targetBase);
+    const base = baseFields.forTarget(targetId);
 
-    for (const [versionKey, versionPayload] of Object.entries(targetPayload.versions)) {
-      const eventSchema = versionPayload.schema;
+    for (const [versionKey, version] of Object.entries(targetPayload.versions)) {
+      const schemaPrefix =
+        versionKey === UNVERSIONED_VERSION_KEY
+          ? `payload.${targetId}.schema`
+          : `payload.${targetId}.${versionKey}.schema`;
+      const exempt = isDeprecatedVersion(version.meta);
+      const fields = effectiveFields(version.schema, base, lookup);
 
-      const isUnversioned = versionKey === UNVERSIONED_VERSION_KEY;
-      const schemaPrefix = isUnversioned
-        ? `payload.${targetId}.schema`
-        : `payload.${targetId}.${versionKey}.schema`;
+      for (const [name, entry] of fields) {
+        const written = entry.event;
+        // A common field that the event does not list: its base problems are reported once
+        if (written === undefined) continue;
+        const fieldPath = `${schemaPrefix}.${name}`;
 
-      // Conflict checks against base layers (type/required)
-      for (const [fieldName, fieldValue] of Object.entries(eventSchema)) {
-        const baseField = baseForTarget[fieldName];
-        if (!baseField) continue;
-
-        if (baseField.type && fieldValue.type && baseField.type !== fieldValue.type) {
-          errors.push({
-            event: event.relativePath,
-            path: `${schemaPrefix}.${fieldName}`,
-            message: `Field type conflict: base '${baseField.type}' vs override '${fieldValue.type}'`,
-            severity: "error",
-          });
-        }
-
-        if (baseField.required === true && fieldValue.required === false) {
-          errors.push({
-            event: event.relativePath,
-            path: `${schemaPrefix}.${fieldName}`,
-            message: "Cannot weaken required field (base required=true, override required=false)",
-            severity: "error",
-          });
-        }
-
-        if (baseField.valueRequired === true && fieldValue.valueRequired === false) {
-          errors.push({
-            event: event.relativePath,
-            path: `${schemaPrefix}.${fieldName}`,
-            message:
-              "Cannot weaken valueRequired field (base valueRequired=true, override valueRequired=false)",
-            severity: "error",
-          });
-        }
-      }
-
-      // Effective schema for this target+version
-      const effectiveSchema = mergeSchemaMaps(baseForTarget, eventSchema);
-
-      // Validate event-defined fields (exclusivity and allowed-values compatibility)
-      for (const [fieldName, fieldValue] of Object.entries(eventSchema)) {
-        const fieldPath = `${schemaPrefix}.${fieldName}`;
-        const targetWidePath = `payload.${targetId}.schema.${fieldName}`;
-        const implicitSchemaPath = `payload.schema.${fieldName}`;
-        if (
-          ignore.has(fieldPath) ||
-          ignore.has(targetWidePath) ||
-          ignore.has(implicitSchemaPath) ||
-          ignore.has(`payload::${fieldName}`)
-        ) {
+        // Closed vocabulary: never ignorable
+        if (!entry.base) {
+          push(fieldPath, [unknownFieldMessage(name, targetId, [...base.keys()])]);
           continue;
         }
 
-        const specFieldConfig = baseForTarget[fieldName];
-
-        const specDef: FieldDefinition | undefined = specFieldConfig
-          ? { enum: specFieldConfig.enum as unknown[], dict: specFieldConfig.dict }
-          : undefined;
-        const eventDef: FieldDefinition = {
-          enum: fieldValue.enum as unknown[],
-          dict: fieldValue.dict,
-          value: fieldValue.value,
-        };
-
-        const exclusivityError = validateFieldExclusivity(eventDef, specDef);
-        if (exclusivityError) {
-          errors.push({
-            event: event.relativePath,
-            path: fieldPath,
-            message: exclusivityError.error || "Field exclusivity violation",
-            severity: "error",
-          });
+        const ignored = ignore.fields.has(name);
+        let weakened = false;
+        for (const problem of entry.problems) {
+          // Narrowing is a field-level check; type, fixed-value and required conflicts are not
+          if (problem.rule === "narrowing" && ignored) continue;
+          if (problem.rule === "required") weakened = true;
+          push(problem.keyword ? `${fieldPath}.${problem.keyword}` : fieldPath, [problem.message]);
         }
 
-        // Dict/enum constraints from base schema applied to fixed values and enums
-        if (specFieldConfig?.dict) {
-          const allowedValues = getDictValues(specFieldConfig.dict, dictionaries);
-          if (!allowedValues) {
-            errors.push({
-              event: event.relativePath,
-              path: fieldPath,
-              message: `Unknown dictionary '${specFieldConfig.dict}'`,
-              severity: "error",
-            });
-          } else {
-            if (
-              fieldValue.value !== undefined &&
-              !allowedValues.includes(fieldValue.value as never)
-            ) {
-              errors.push({
-                event: event.relativePath,
-                path: `${fieldPath}.value`,
-                message: `Value '${String(fieldValue.value)}' is not in dictionary '${specFieldConfig.dict}'`,
-                severity: "error",
-              });
-            }
-            if (fieldValue.enum) {
-              const invalid = fieldValue.enum.filter((v) => !allowedValues.includes(v as never));
-              if (invalid.length > 0) {
-                errors.push({
-                  event: event.relativePath,
-                  path: `${fieldPath}.enum`,
-                  message: `Enum values [${invalid.map(String).join(", ")}] are not in dictionary '${specFieldConfig.dict}'`,
-                  severity: "error",
-                });
-              }
-            }
+        // Keywords that the effective type does not allow, where this version writes them (never
+        // ignorable; one written through $ref is reported in the version that writes it)
+        const own = version.ownSchema ? getOwn(version.ownSchema, name) : written;
+        if (own !== undefined) {
+          const ownPath = version.writtenPath ? `${version.writtenPath}.${name}` : fieldPath;
+          for (const problem of typedKeywordProblems(name, own, entry.field)) {
+            pushOnce(`${ownPath}${problem.suffix}`, problem.message);
           }
         }
 
-        // A dict override narrows the base enum or dict: every value of the event's dictionary must
-        // be allowed by the base. An unknown dictionary on either side is reported elsewhere.
-        // opentp.yaml is not schema-checked, so a base enum that is not a list is skipped here.
-        const baseEnum = Array.isArray(specFieldConfig?.enum) ? specFieldConfig.enum : undefined;
-        if (fieldValue.dict !== undefined && (baseEnum || specFieldConfig?.dict)) {
-          const eventValues = getDictValues(fieldValue.dict, dictionaries);
-          const baseValues: unknown[] | null = specFieldConfig?.dict
-            ? getDictValues(specFieldConfig.dict, dictionaries)
-            : (baseEnum ?? null);
-          if (eventValues && baseValues) {
-            const invalid = eventValues.filter((v) => !baseValues.includes(v));
-            if (invalid.length > 0) {
-              const base = specFieldConfig?.dict
-                ? `dictionary '${specFieldConfig.dict}'`
-                : `base enum [${baseValues.map(String).join(", ")}]`;
-              errors.push({
-                event: event.relativePath,
-                path: `${fieldPath}.dict`,
-                message: `Dictionary '${fieldValue.dict}' has values [${invalid.map(String).join(", ")}] that are not in ${base}`,
-                severity: "error",
-              });
-            }
+        // Presence: a field with a value or a strict policy is always present (never ignorable)
+        if (written.required === false && !weakened) {
+          const reason = presenceReason(entry.field, !exempt);
+          if (reason) push(fieldPath, [alwaysPresentMessage(name, reason)]);
+        }
+
+        if (!ignored) {
+          await checkEventField(name, entry.field, written, fieldPath, own?.example !== undefined);
+        }
+      }
+
+      // Policy (D4): catalog and common fields; versions marked meta.deprecated are exempt
+      if (!exempt) {
+        for (const [name, field] of base) {
+          if (field.policy === undefined || ignore.fields.has(name)) continue;
+          const written = Object.hasOwn(version.schema, name) ? version.schema[name] : undefined;
+          const need = policyNeed(
+            field.policy,
+            written,
+            field.restrictedAfterPolicy,
+            field.fixedAfterPolicy,
+            field.field.type,
+          );
+          if (need) {
+            push(`${schemaPrefix}.${name}`, [
+              `Field '${name}' has policy '${field.policy}': ${need}`,
+            ]);
           }
         }
       }
 
-      // Validate effective fields (fixed values, constraints, x-opentp checks, pii)
-      for (const [fieldName, effectiveField] of Object.entries(effectiveSchema)) {
-        const fieldPath = `${schemaPrefix}.${fieldName}`;
-        const targetWidePath = `payload.${targetId}.schema.${fieldName}`;
-        const implicitSchemaPath = `payload.schema.${fieldName}`;
-        if (
-          ignore.has(fieldPath) ||
-          ignore.has(targetWidePath) ||
-          ignore.has(implicitSchemaPath) ||
-          ignore.has(`payload::${fieldName}`)
-        ) {
+      // Code-facing names are unique among the effective fields of this version
+      const names = new Map<string, string>();
+      for (const [name, entry] of fields) {
+        if (!entry.base) continue;
+        const code = codeName(name, entry.field);
+        const first = names.get(code);
+        if (first === undefined) {
+          names.set(code, name);
           continue;
         }
-
-        if (effectiveField.valueRequired === true) {
-          const eventDefinesField = Object.hasOwn(eventSchema, fieldName);
-          const needsFixedValue = effectiveField.required === true || eventDefinesField;
-
-          if (needsFixedValue && effectiveField.value === undefined) {
-            errors.push({
-              event: event.relativePath,
-              path: `${fieldPath}.value`,
-              message: "Missing required fixed value: valueRequired=true requires a fixed 'value'",
-              severity: "error",
-            });
-          }
-        }
-
-        if (effectiveField.dict) {
-          const allowed = getDictValues(effectiveField.dict, dictionaries);
-          if (!allowed) {
-            errors.push({
-              event: event.relativePath,
-              path: fieldPath,
-              message: `Unknown dictionary '${effectiveField.dict}'`,
-              severity: "error",
-            });
-          }
-        }
-
-        if (effectiveField.enum) {
-          for (let i = 0; i < effectiveField.enum.length; i += 1) {
-            const v = effectiveField.enum[i];
-            validateEffectiveValue(v, effectiveField, `${fieldPath}.enum[${i}]`);
-          }
-        }
-
-        if (effectiveField.value !== undefined) {
-          validateEffectiveValue(effectiveField.value, effectiveField, `${fieldPath}.value`);
-        }
-
-        const checks = effectiveField["x-opentp"]?.checks;
-        if (checks && effectiveField.value !== undefined) {
-          const fixed = effectiveField.value;
-          if (
-            typeof fixed === "string" ||
-            typeof fixed === "number" ||
-            typeof fixed === "boolean"
-          ) {
-            const ctx: RuleContext = {
-              fieldName,
-              fieldPath: fieldPath,
-              eventKey: event.key,
-            };
-            const ruleErrors = await validateWithRules(fixed, checks, ctx);
-            for (const ruleError of ruleErrors) {
-              errors.push({
-                event: event.relativePath,
-                path: `${fieldPath}.value`,
-                message: ruleError.error || "Validation failed",
-                severity: "error",
-              });
-            }
-          }
-        }
-
-        if (
-          effectiveField.pii &&
-          typeof effectiveField.pii === "object" &&
-          effectiveField.pii !== null
-        ) {
-          await validatePii(fieldName, fieldPath, effectiveField.pii as Record<string, unknown>);
-        }
+        const firstEntry = fields.get(first) as EffectiveField;
+        // Two common fields only: reported once against opentp.yaml
+        if (!namedByEvent(entry) && !namedByEvent(firstEntry)) continue;
+        const at = namedByEvent(entry) ? name : first;
+        if (ignore.fields.has(at)) continue;
+        push(`${schemaPrefix}.${at}`, [codeNameMessage(code, first, name)]);
       }
     }
   }
 
   return errors;
-}
-
-function compileRegex(pattern: string): RegExp | null {
-  try {
-    return new RegExp(pattern, "u");
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -1552,22 +1207,93 @@ export function groupErrorsByEvent(errors: ValidationError[]): Map<string, Valid
   return grouped;
 }
 
+/** One `[<event>]` block: the header (after a blank line), then one line per problem */
+function* blockLines(event: string, errors: readonly ValidationError[]): Generator<string> {
+  yield `\n[${event}]`;
+  for (const error of errors) {
+    const prefix = error.severity === "error" ? "✗" : "⚠";
+    // File-level problems (e.g. YAML syntax errors) have an empty path
+    const location = error.path ? `${error.path}: ` : "";
+    yield `  ${prefix} ${location}${error.message}`;
+  }
+}
+
 /**
- * Formats errors for console output
+ * The lines of formatErrors, one at a time, so that a large report is printed without building
+ * one string
+ */
+export function* errorLines(errors: ValidationError[]): Generator<string> {
+  for (const [event, eventErrors] of groupErrorsByEvent(errors)) {
+    yield* blockLines(event, eventErrors);
+  }
+}
+
+/**
+ * Formats errors (or warnings) for console output: `[<event>]` blocks with `  ✗ <path>: <message>`
+ * lines (`⚠` for warnings)
  */
 export function formatErrors(errors: ValidationError[]): string {
-  const grouped = groupErrorsByEvent(errors);
-  const lines: string[] = [];
+  return [...errorLines(errors)].join("\n");
+}
 
-  for (const [event, eventErrors] of grouped) {
-    lines.push(`\n[${event}]`);
-    for (const error of eventErrors) {
-      const prefix = error.severity === "error" ? "✗" : "⚠";
-      // File-level problems (e.g. YAML syntax errors) have an empty path
-      const location = error.path ? `${error.path}: ` : "";
-      lines.push(`  ${prefix} ${location}${error.message}`);
+/** Overlap warnings printed in text mode; `--json` lists all */
+export const OVERLAP_TEXT_LIMIT = 20;
+
+/**
+ * The lines of formatWarnings, one at a time. One block per file: its other warnings, then its
+ * overlap warnings. At most `overlapLimit` overlap warnings are printed, from the events with the
+ * most attached overlap warnings first (a summary counts as the pairs it stands for; ties by path), then
+ * one line says how many more there are. Files with other warnings come first, in their order;
+ * files with only overlap warnings follow, in the overlap order.
+ */
+export function* warningLines(
+  warnings: ValidationError[],
+  overlapLimit: number = OVERLAP_TEXT_LIMIT,
+): Generator<string> {
+  const others = groupErrorsByEvent(warnings.filter((warning) => warning.rule !== "overlap"));
+  const overlap = groupErrorsByEvent(warnings.filter((warning) => warning.rule === "overlap"));
+
+  const weights = new Map<string, number>();
+  for (const [event, list] of overlap) {
+    let weight = 0;
+    for (const warning of list) weight += overlapMessageWeight(warning.message);
+    weights.set(event, weight);
+  }
+  const events = [...overlap.keys()].sort((a, b) => {
+    const difference = (weights.get(b) ?? 0) - (weights.get(a) ?? 0);
+    if (difference !== 0) return difference;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+
+  const shown = new Map<string, ValidationError[]>();
+  let total = 0;
+  let printed = 0;
+  for (const event of events) {
+    const list = overlap.get(event) ?? [];
+    total += list.length;
+    if (printed < overlapLimit) {
+      const taken = list.slice(0, overlapLimit - printed);
+      shown.set(event, taken);
+      printed += taken.length;
     }
   }
 
-  return lines.join("\n");
+  for (const [event, list] of others) {
+    yield* blockLines(event, [...list, ...(shown.get(event) ?? [])]);
+  }
+  for (const [event, list] of shown) {
+    if (!others.has(event)) yield* blockLines(event, list);
+  }
+  const hidden = total - printed;
+  if (hidden > 0) {
+    yield `… ${hidden} more overlap warnings (--json lists all; set checks.severity.overlap in opentp.cli.yaml)`;
+  }
+}
+
+/** Formats warnings for text output (see warningLines) */
+export function formatWarnings(
+  warnings: ValidationError[],
+  overlapLimit: number = OVERLAP_TEXT_LIMIT,
+): string {
+  return [...warningLines(warnings, overlapLimit)].join("\n");
 }

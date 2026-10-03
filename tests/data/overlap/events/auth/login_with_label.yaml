@@ -1,0 +1,16 @@
+opentp: 2026-09
+
+event:
+  key: auth::login_with_label
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_category:
+        value: auth
+      event_name:
+        value: login
+      auth_method: {}
+      # A free field: it does not tell the two events apart
+      event_label: {}

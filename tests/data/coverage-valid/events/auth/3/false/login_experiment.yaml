@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::login_experiment::experiment::login::p3::internal-false
@@ -18,6 +18,11 @@ event:
           value: auth
         auth_method:
           value: github
+        # The catalog example (team) is not in this enum, so it is dropped
+        plan_tier:
+          enum: [free, pro]
+        # Type inheritance: the type comes from the catalog
+        user_id: {}
 
     mobile:
       current: stable
@@ -31,8 +36,9 @@ event:
           event_category:
             value: auth
           device_model:
-            type: string
             required: true
+          auth_method:
+            enum: [google, github]
       "1.1.0":
         $ref: "1.0.0"
         meta:

@@ -1,10 +1,10 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::payload_missing_value_required::p1::internal-false
 
   taxonomy:
-    action: Payload does not define a required fixed value
+    action: The event still writes valueRequired, which was removed in 2026-09
     action_detail: "test::payload"
 
   payload:
@@ -12,6 +12,9 @@ event:
       schema:
         application_id:
           type: string
+          value: web-app
+          # Reported once per file at the written path (never ignorable)
+          valueRequired: true
         event_name:
           value: payload_missing_value_required
         event_category:

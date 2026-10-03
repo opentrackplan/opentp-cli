@@ -7,6 +7,9 @@ export {
   registerGenerator,
 } from "./registry";
 export type {
+  EffectivePayload,
+  EffectiveTargetPayload,
+  EffectiveVersion,
   GeneratedFile,
   GeneratorContext,
   GeneratorDefinition,

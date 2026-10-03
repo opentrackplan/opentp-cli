@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { parse } from "yaml";
+import { parseYaml } from "./yaml";
 
 /**
  * Recursively scans a directory and returns Map<relativePath, absolutePath>
@@ -53,11 +53,11 @@ export function filterByExtension(
 }
 
 /**
- * Loads a YAML file
+ * Loads a YAML file (mappings keep their source key order, see keysInSourceOrder)
  */
 export function loadYaml<T>(filePath: string): T {
   const content = fs.readFileSync(filePath, "utf-8");
-  return parse(content) as T;
+  return parseYaml(content) as T;
 }
 
 /**
@@ -86,14 +86,6 @@ export function formatLoadError(error: unknown): string {
   }
 
   return firstLine;
-}
-
-/**
- * Saves data to a YAML file
- */
-export function saveYaml(filePath: string, data: unknown): void {
-  const { stringify } = require("yaml");
-  fs.writeFileSync(filePath, stringify(data), "utf-8");
 }
 
 /**

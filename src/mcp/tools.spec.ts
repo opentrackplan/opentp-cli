@@ -65,18 +65,66 @@ describe("describePlan", () => {
   it("describes taxonomy, paths, keys, targets and counts", () => {
     const description = describePlan(plan);
     expect(description.title).toBe("Coverage Fixture (Valid)");
-    expect(description.opentp).toBe("2026-01");
+    expect(description.opentp).toBe("2026-09");
     expect(description.eventsRoot).toBe("events");
     expect(description.pathTemplate).toBe("{area}/{priority_level}/{is_internal}/{event}.yaml");
     expect(description.taxonomy.area).toMatchObject({ fromPath: true, dict: "taxonomy/areas" });
     expect(description.taxonomy.action).toMatchObject({ fromPath: false, required: true });
+    // keygen comes from opentp.cli.yaml
     expect(description.key.keygenTemplate).toContain("{area | slug}");
+    expect(description.checks).toHaveProperty("jira-key.pattern");
     expect(description.targets).toEqual({
       all: ["web", "ios", "android"],
       mobile: ["ios", "android"],
     });
-    expect(description.targetSchemas).toHaveProperty("ios.device_model");
     expect(description.counts).toEqual({ events: 4, dictionaries: 5, loadProblems: 0 });
+  });
+
+  it("describes the catalog, the common fields per target with their policy, and keygen", () => {
+    const description = describePlan(plan);
+    expect(description).not.toHaveProperty("baseSchema");
+    expect(description).not.toHaveProperty("targetSchemas");
+    expect(description).not.toHaveProperty("pinnedPlan");
+    expect(Object.keys(description.catalog)).toEqual([
+      "dimension_1",
+      "auth_method",
+      "plan_tier",
+      "user_id",
+      "device_model",
+      "step_index",
+      "is_internal",
+      "priority_level",
+      "tags",
+    ]);
+    expect(description.catalog.dimension_1).toMatchObject({ type: "string", name: "orgType" });
+    // Common fields of every target, merged over the catalog, with their policy
+    expect(Object.keys(description.commonFields)).toEqual(["web", "ios", "android"]);
+    expect(Object.keys(description.commonFields.web)).toEqual([
+      "application_id",
+      "event_name",
+      "event_category",
+      "build_variant",
+    ]);
+    expect(description.commonFields.web.application_id).toMatchObject({
+      type: "string",
+      dict: "data/application_id",
+      policy: "fixed",
+    });
+    expect(description.commonFields.web.event_category).toMatchObject({ policy: "restricted" });
+    // A catalog field that spec.targets.ios makes common: its type comes from the catalog
+    expect(description.commonFields.ios.device_model).toEqual({
+      type: "string",
+      description: "Model identifier reported by iOS",
+      policy: "specified",
+    });
+    expect(description.commonFields.android).not.toHaveProperty("device_model");
+    // spec.targets settings besides the fields
+    expect(description.targetSettings).toEqual({
+      all: { title: "Every target", description: "Fields that every event sends on every target" },
+      ios: { title: "iOS", "x-acme-team": "mobile" },
+    });
+    expect(description.key).toMatchObject({ keygen: true });
+    expect(description.tracker).toBeNull();
   });
 });
 
@@ -114,8 +162,33 @@ describe("getEvent", () => {
     expect(groups).toEqual(expect.arrayContaining([["android", "web"], ["ios"]]));
     const web = event.payload.find((group) => group.targets.includes("web"));
     expect(web?.version).toBeNull();
-    expect(web?.schema.application_id).toMatchObject({ value: "web-app", required: true });
-    expect(web?.schema.build_variant).toMatchObject({ required: false });
+    // Common fields (spec.targets.all) merged with the event layer
+    expect(web?.schema.application_id).toMatchObject({ value: "web-app", policy: "fixed" });
+    expect(web?.layers.application_id).toEqual(["all", "event"]);
+    // A common field the event does not list is still part of it
+    expect(web?.schema.build_variant).toMatchObject({ type: "string", required: false });
+    expect(web?.layers.build_variant).toEqual(["all"]);
+    // A catalog field the event lists, with the type from the catalog
+    expect(web?.schema.dimension_1).toMatchObject({ type: "string", value: "enterprise" });
+    expect(web?.layers.dimension_1).toEqual(["catalog", "event"]);
+    const ios = event.payload.find((group) => group.targets.includes("ios"));
+    expect(ios?.layers.device_model).toEqual(["catalog", "target", "event"]);
+    expect(ios?.schema.device_model).toMatchObject({ type: "string", policy: "specified" });
+  });
+
+  it("leaves out catalog fields that the event does not list", () => {
+    const event = getEvent(plan, { key: LOGIN_KEY, target: "web" });
+    // plan_tier is in the catalog, but this event does not list it
+    expect(event.payload[0]?.schema).not.toHaveProperty("plan_tier");
+    // login_experiment lists plan_tier with a narrower enum: the catalog example is dropped
+    const experiment = getEvent(plan, {
+      key: "auth::login_experiment::experiment::login::p3::internal-false",
+      target: "web",
+    });
+    expect(experiment.payload[0]?.schema.plan_tier).toEqual({
+      type: "string",
+      enum: ["free", "pro"],
+    });
   });
 
   it("selects a target and a version or alias", () => {
@@ -197,6 +270,8 @@ describe("validateEventDraft", () => {
   it("accepts an existing event at its own path (relative to the events or project root)", async () => {
     const result = await validateEventDraft(plan, { path: LOGIN_FILE, yaml: loginYaml });
     expect(result).toMatchObject({ valid: true, key: LOGIN_KEY, replacesExistingFile: true });
+    // The event at the same path is the file the draft replaces: no overlap with itself
+    expect(result.warnings).toEqual([]);
     const projectRelative = await validateEventDraft(plan, {
       path: `events/${LOGIN_FILE}`,
       yaml: loginYaml,
@@ -238,35 +313,76 @@ describe("validateEventDraft", () => {
 });
 
 describe("validateEventDraft safety", () => {
-  it("does not run webhook checks defined in the draft", async () => {
-    let requests = 0;
-    const server = http.createServer((_request, response) => {
-      requests++;
+  it("runs webhook bindings for the plan but never for drafts, and rejects webhooks in drafts", async () => {
+    const requests: string[] = [];
+    const server = http.createServer((request, response) => {
+      requests.push(String(request.url));
       response.end("{}");
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     try {
+      const root = planCopy();
+      editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+        cli.checks.bindings["name-registered"] = {
+          webhook: { url: `http://127.0.0.1:${port}/check` },
+        };
+      });
+      editYaml(path.join(root, "opentp.yaml"), (config) => {
+        config.spec.targets.all.schema.event_name.checks["name-registered"] = true;
+      });
+      const copy = await new PlanStore(root).current();
+
+      // The plan: one request per fixed event_name value, target and version
+      expect((await validatePlan(copy, {})).valid).toBe(true);
+      expect(requests.length).toBeGreaterThan(0);
+      requests.length = 0;
+
       const draft = parse(fs.readFileSync(path.join(FIXTURE, "events", LOGIN_FILE), "utf8"));
-      draft.event.payload.schema.event_name["x-opentp"] = {
-        checks: { webhook: { url: `http://127.0.0.1:${port}/check?token=\${HOME}` } },
-      };
-      const result = await validateEventDraft(plan, { path: LOGIN_FILE, yaml: stringify(draft) });
+      const result = await validateEventDraft(copy, { path: LOGIN_FILE, yaml: stringify(draft) });
       expect(result.valid).toBe(true);
-      expect((result as { note?: string }).note).toContain(
-        "1 webhook check(s) defined in the draft were not run",
+      expect((result as { note?: string }).note).toBe(
+        "webhook binding 'name-registered' was not run for a draft",
       );
-      expect(requests).toBe(0);
+      expect(requests).toEqual([]);
+
+      // A draft cannot define a webhook itself: `webhook` is a reserved check id
+      draft.event.payload.schema.event_name.checks = {
+        webhook: { url: `http://127.0.0.1:${port}/check?token=\${HOME}` },
+      };
+      const own = await validateEventDraft(copy, { path: LOGIN_FILE, yaml: stringify(draft) });
+      expect(own.valid).toBe(false);
+      expect(own.errors).toContainEqual({
+        path: "payload.schema.event_name.checks.webhook",
+        message:
+          "Webhook checks are bound in opentp.cli.yaml (checks.bindings.<id>.webhook); refer to them by id",
+      });
+      expect(requests).toEqual([]);
     } finally {
       server.close();
     }
+  });
+
+  it("returns warnings for a draft (unknown check ids)", async () => {
+    const draft = parse(fs.readFileSync(path.join(FIXTURE, "events", LOGIN_FILE), "utf8"));
+    draft.event.payload.schema.event_name.checks = { "no-such-check": true };
+    const result = await validateEventDraft(plan, { path: LOGIN_FILE, yaml: stringify(draft) });
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toEqual([
+      {
+        path: "payload.schema.event_name.checks.no-such-check",
+        message:
+          "Unknown check 'no-such-check': not in spec.checks, not a built-in or plugin check, not bound in opentp.cli.yaml",
+        rule: "unknownCheck",
+      },
+    ]);
   });
 
   it("says when the draft replaces a file that opentp cannot load", async () => {
     const invalid = await new PlanStore(INVALID_FIXTURE).current();
     const result = await validateEventDraft(invalid, {
       path: "auth/1/false/yaml_syntax_error.yaml",
-      yaml: "opentp: 2026-01\n",
+      yaml: "opentp: 2026-09\n",
     });
     expect(result).toMatchObject({ replacesExistingFile: true });
     expect(result.existingFileProblem).toMatch(/^Invalid YAML at line/);
@@ -286,6 +402,121 @@ describe("validateEventDraft safety", () => {
   });
 });
 
+describe("validateEventDraft overlap", () => {
+  const COPY_FILE = "auth/2/false/login_copy.yaml";
+  const COPY_KEY = "auth::login_copy::click::login_button::p2::internal-false";
+
+  /** The login event as a draft at another path, with the key keygen expects there */
+  function copyYaml(change: (document: any) => void = () => {}): string {
+    const document = parse(fs.readFileSync(path.join(FIXTURE, "events", LOGIN_FILE), "utf8"));
+    document.event.key = COPY_KEY;
+    change(document);
+    return stringify(document);
+  }
+
+  const loginOverlap = {
+    path: "payload",
+    message: `Overlaps with event '${LOGIN_KEY}' (${LOGIN_FILE}) on web, ios, android: identical: no constrained field tells them apart`,
+    rule: "overlap",
+  };
+
+  it("warns about plan events that the draft overlaps (all but the event at its path)", async () => {
+    const result = await validateEventDraft(plan, { path: COPY_FILE, yaml: copyYaml() });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toContainEqual(loginOverlap);
+    for (const warning of result.warnings) expect(warning.rule).toBe("overlap");
+    // The index of the plan's predicates is built once per snapshot
+    expect(plan.overlapIndex).toBe(plan.overlapIndex);
+  });
+
+  it("respects the draft's ignore entries (overlap, overlap.<key>)", async () => {
+    const all = await validateEventDraft(plan, {
+      path: COPY_FILE,
+      yaml: copyYaml((document) => {
+        document.event.ignore = [{ path: "overlap" }];
+      }),
+    });
+    expect(all.warnings).toEqual([]);
+    const one = await validateEventDraft(plan, {
+      path: COPY_FILE,
+      yaml: copyYaml((document) => {
+        document.event.ignore = [{ path: `overlap.${LOGIN_KEY}` }];
+      }),
+    });
+    expect(one.warnings).not.toContainEqual(loginOverlap);
+  });
+
+  it("takes the draft's versions in file order, also with keys '2' before '1'", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "opentp-mcp-"));
+    tempDirs.push(root);
+    fs.mkdirSync(path.join(root, "events", "a"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "opentp.yaml"),
+      [
+        "opentp: 2026-09",
+        "info: { title: Versions, version: 1.0.0 }",
+        "spec:",
+        "  paths:",
+        "    events: { root: /events, template: '{area}/{event}.yaml' }",
+        "  events:",
+        "    taxonomy: {}",
+        "    payload:",
+        "      targets: { all: [web] }",
+        "      schema:",
+        "        event_name: { type: string }",
+        "        screen: { type: string }",
+        "        auth_method: { type: string }",
+        "",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(root, "events", "a", "b.yaml"),
+      "opentp: 2026-09\nevent:\n  key: a::b\n  taxonomy: {}\n  payload:\n    schema: { event_name: { value: x }, screen: { value: home } }\n",
+    );
+    const versions = await new PlanStore(root).current();
+    // Version "2" contains a::b, and a::b contains version "1": the first version decides
+    const result = await validateEventDraft(versions, {
+      path: "a/a.yaml",
+      yaml: [
+        "opentp: 2026-09",
+        "event:",
+        "  key: a::a",
+        "  taxonomy: {}",
+        "  payload:",
+        '    current: "2"',
+        '    "2": { schema: { event_name: { value: x } } }',
+        '    "1": { schema: { event_name: { value: x }, screen: { value: home }, auth_method: { value: email } } }',
+        "",
+      ].join("\n"),
+    });
+    expect(result.warnings).toEqual([
+      {
+        path: "payload",
+        message:
+          "Overlaps with event 'a::b' (a/b.yaml) on web: every hit of 'a::b' also matches 'a::a'",
+        rule: "overlap",
+      },
+    ]);
+  });
+
+  it("follows the severity: off computes nothing, error makes the draft invalid", async () => {
+    const root = planCopy();
+    editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+      cli.checks.severity = { overlap: "off" };
+    });
+    const off = await new PlanStore(root).current();
+    const quiet = await validateEventDraft(off, { path: COPY_FILE, yaml: copyYaml() });
+    expect(quiet).toMatchObject({ valid: true, warnings: [] });
+
+    const strict = await new PlanStore(FIXTURE, { failOn: ["overlap"] }).current();
+    const result = await validateEventDraft(strict, { path: COPY_FILE, yaml: copyYaml() });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContainEqual(loginOverlap);
+    expect(result.warnings).toEqual([]);
+  });
+});
+
 describe("validatePlan", () => {
   it("returns the plan's validation result, optionally for some files", async () => {
     expect(await validatePlan(plan, {})).toMatchObject({
@@ -301,7 +532,7 @@ describe("validatePlan", () => {
 
   it("reports the errors and the load status of the requested files", async () => {
     const root = planCopy(INVALID_FIXTURE);
-    fs.writeFileSync(path.join(root, "events/auth/misplaced.yaml"), "opentp: 2026-01\n");
+    fs.writeFileSync(path.join(root, "events/auth/misplaced.yaml"), "opentp: 2026-09\n");
     const invalid = await new PlanStore(root).current();
     const bad = "badarea/1/false/area_not_in_dict.yaml";
     for (const file of [bad, `events/${bad}`]) {
@@ -355,19 +586,102 @@ describe("suggestEvent", () => {
     expect(result.requiredPayloadFields).toContainEqual(
       expect.objectContaining({
         name: "application_id",
-        needsValue: true,
         dict: "data/application_id",
+        policy: "fixed",
+        targets: ["web", "ios", "android"],
       }),
+    );
+    expect(result.requiredPayloadFields).toContainEqual(
+      expect.objectContaining({ name: "device_model", policy: "specified", targets: ["ios"] }),
     );
 
     const skeleton = parse(result.skeleton);
-    expect(skeleton.opentp).toBe("2026-01");
+    expect(skeleton.opentp).toBe("2026-09");
     expect(skeleton.event.key).toBe(LOGIN_KEY);
     // Path fields stay in the path
     expect(skeleton.event.taxonomy).not.toHaveProperty("area");
     expect(skeleton.event.taxonomy.action).toBe("User clicks the login button");
-    // The empty payload still lacks the fixed values of required common fields
-    expect(result.skeletonErrors.map((error) => error.path).join("\n")).toContain("application_id");
+    // Every field with a policy, with a placeholder where the event must write something; the
+    // same fields work on every target, so the payload is implicit
+    expect(skeleton.event.payload).toEqual({
+      schema: {
+        application_id: { value: "<...>" },
+        event_name: { value: "<...>" },
+        event_category: { enum: ["<...>"] },
+        device_model: {},
+      },
+    });
+    expect(result.skeleton).toContain("value: <...>");
+    // What is left to do: the placeholders are not valid values yet
+    expect(result.skeletonErrors.length).toBeGreaterThan(0);
+    for (const error of result.skeletonErrors) {
+      expect(error.path).toMatch(
+        /^payload\.(web|ios|android)\.schema\.(application_id|event_name)/,
+      );
+    }
+  });
+
+  it("writes one payload per target when the targets need different fields", async () => {
+    const root = planCopy();
+    editYaml(path.join(root, "opentp.yaml"), (config) => {
+      // A common field of iOS only (not in the catalog), and a fixed value written with its policy
+      config.spec.targets.ios.schema.ios_build = { type: "string", policy: "specified" };
+      config.spec.targets.all.schema.schema_version = {
+        type: "integer",
+        value: 2,
+        policy: "fixed",
+      };
+    });
+    const copy = await new PlanStore(root).current();
+    const result = await suggestEvent(copy, { taxonomy: LOGIN_TAXONOMY });
+    const common = {
+      application_id: { value: "<...>" },
+      event_name: { value: "<...>" },
+      event_category: { enum: ["<...>"] },
+      // A fixed value cannot change: the skeleton repeats it
+      schema_version: { value: 2 },
+    };
+    expect(parse(result.skeleton).event.payload).toEqual({
+      web: { schema: common },
+      ios: { schema: { ...common, device_model: {}, ios_build: {} } },
+      android: { schema: common },
+    });
+  });
+
+  it("writes value: [<...>] for an array field with policy restricted or fixed", async () => {
+    const root = planCopy();
+    editYaml(path.join(root, "opentp.yaml"), (config) => {
+      config.spec.targets.all.schema.tags = {
+        type: "array",
+        items: { type: "string" },
+        policy: "restricted",
+      };
+      config.spec.targets.all.schema.flags = {
+        type: "array",
+        items: { type: "boolean" },
+        policy: "fixed",
+      };
+    });
+    const copy = await new PlanStore(root).current();
+    const result = await suggestEvent(copy, { taxonomy: LOGIN_TAXONOMY });
+    const skeleton = parse(result.skeleton);
+    expect(skeleton.event.payload.schema.tags).toEqual({ value: ["<...>"] });
+    expect(skeleton.event.payload.schema.flags).toEqual({ value: ["<...>"] });
+
+    // Filled in the natural way, the skeleton validates
+    const filled = result.skeleton
+      .replace("application_id:\n        value: <...>", "application_id:\n        value: web-app")
+      .replace(/event_name:\n {8}value: <\.\.\.>/, "event_name:\n        value: login_button_click")
+      .replace(
+        /event_category:\n {8}enum:\n {10}- <\.\.\.>/,
+        "event_category:\n        enum: [auth]",
+      )
+      .replace(/tags:\n {8}value:\n {10}- <\.\.\.>/, "tags:\n        value: [a]")
+      .replace(/flags:\n {8}value:\n {10}- <\.\.\.>/, "flags:\n        value: [true]");
+    expect(filled).not.toContain("<...>");
+    // At the path of the existing event that the skeleton is for (it replaces that event)
+    const draft = await validateEventDraft(copy, { path: LOGIN_FILE, yaml: filled });
+    expect(draft.errors).toEqual([]);
   });
 
   it("reports missing path fields, fragments and unknown fields", async () => {
@@ -397,8 +711,8 @@ describe("suggestEvent", () => {
 
   it("explains a missing key when keygen is not configured", async () => {
     const root = planCopy();
-    editYaml(path.join(root, "opentp.yaml"), (config) => {
-      delete config.spec.events["x-opentp"];
+    editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+      delete cli.keygen;
     });
     const copy = await new PlanStore(root).current();
     const result = await suggestEvent(copy, { taxonomy: LOGIN_TAXONOMY });
@@ -430,6 +744,157 @@ describe("generate", () => {
   it("refuses a plan that could not be loaded completely", async () => {
     const invalid = await new PlanStore(path.resolve("tests/data/coverage-invalid")).current();
     await expect(generate(invalid, { generator: "json" })).rejects.toThrow(/could not be loaded/);
+  });
+
+  it("exports the catalog, targets, checks and the effective payload of every event", async () => {
+    const result = await generate(plan, { generator: "json" });
+    const data = JSON.parse(result.output);
+    expect(Object.keys(data)).toEqual([
+      "opentp",
+      "info",
+      "catalog",
+      "targets",
+      "checks",
+      "events",
+      "dictionaries",
+    ]);
+    expect(data.events.map((event: { key: string }) => event.key)).toEqual(
+      plan.events.map((event) => event.key),
+    );
+    const login = data.events.find((event: { key: string }) => event.key === LOGIN_KEY);
+    expect(login.effectivePayload.web.fields.application_id).toMatchObject({
+      value: "web-app",
+      policy: "fixed",
+    });
+  });
+
+  it("runs a generate.run entry of opentp.cli.yaml and returns its output without writing it", async () => {
+    const root = planCopy();
+    fs.mkdirSync(path.join(root, "templates"));
+    fs.writeFileSync(
+      path.join(root, "templates/keys.txt"),
+      "{{#each events}}{{key}} {{effectivePayload.web.fields.event_name.value}}\n{{/each}}",
+    );
+    editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+      cli.generate = {
+        run: [
+          {
+            generator: "json",
+            target: "android",
+            events: { area: "onboarding" },
+            output: "dist/onboarding.json",
+          },
+          {
+            generator: "template",
+            file: "templates/keys.txt",
+            events: { area: "auth" },
+            output: "docs/keys.txt",
+          },
+          { generator: "nope", output: "x" },
+        ],
+      };
+    });
+    const copy = await new PlanStore(root).current();
+
+    const json = await generate(copy, { run: 0 });
+    expect(json).toMatchObject({
+      generator: "json",
+      run: 0,
+      entryOutput: "dist/onboarding.json",
+      eventCount: 1,
+    });
+    expect(JSON.parse(json.output).events[0].key).toBe(ONBOARDING_KEY);
+
+    const template = await generate(copy, { run: 1, keys: [LOGIN_KEY] });
+    expect(template.output).toBe(`${LOGIN_KEY} login_button_click\n`);
+
+    // Nothing is written
+    expect(fs.existsSync(path.join(root, "dist"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "docs"))).toBe(false);
+
+    await expect(generate(copy, { run: 0, generator: "yaml" })).rejects.toThrow(
+      "generate.run[0] uses the json generator, not yaml: pass only run",
+    );
+    await expect(generate(copy, { run: 0, keys: [LOGIN_KEY] })).rejects.toThrow(
+      `Not selected by generate.run[0] (target, events): ${LOGIN_KEY}`,
+    );
+    await expect(generate(copy, { run: 2 })).rejects.toThrow(
+      "Unknown generator 'nope' (opentp mcp does not load generate.plugins)",
+    );
+    await expect(generate(copy, { run: 3 })).rejects.toThrow(
+      "No generate.run entry 3: opentp.cli.yaml has 3 (0 to 2)",
+    );
+    await expect(generate(copy, {})).rejects.toThrow(
+      "Pass generator (json or yaml) or run (the index of a generate.run entry in opentp.cli.yaml)",
+    );
+    await expect(generate(plan, { run: 0 })).rejects.toThrow(
+      "opentp.cli.yaml has no generate.run entries: pass generator instead",
+    );
+  });
+
+  it("reports a generate.run entry whose filter does not fit the plan", async () => {
+    const root = planCopy();
+    editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+      cli.generate = { run: [{ generator: "json", target: "desktop", output: "x.json" }] };
+    });
+    const copy = await new PlanStore(root).current();
+    await expect(generate(copy, { run: 0 })).rejects.toThrow(
+      "opentp.cli.yaml: generate.run[0].target: unknown target 'desktop' (targets: web, ios, android)",
+    );
+  });
+
+  it("reads template files of generate.run entries only inside the directory of opentp.cli.yaml", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "opentp-mcp-contain-"));
+    try {
+      fs.writeFileSync(path.join(base, "secret.txt"), "SECRET-OUTSIDE");
+      const root = path.join(base, "plan");
+      fs.cpSync(FIXTURE, root, { recursive: true });
+      fs.symlinkSync(path.join(base, "secret.txt"), path.join(root, "linked.txt"));
+      fs.mkdirSync(path.join(root, ".git"));
+      fs.writeFileSync(path.join(root, ".git", "config"), "[core]\n");
+      editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+        cli.generate = {
+          run: [
+            { generator: "template", file: "../secret.txt", output: "a.txt" },
+            { generator: "template", file: path.join(base, "secret.txt"), output: "b.txt" },
+            { generator: "template", file: "linked.txt", output: "c.txt" },
+            { generator: "template", file: ".git/config", output: "d.txt" },
+            { generator: "template", output: "e.txt" },
+            { generator: "template", file: "missing.tpl", output: "f.txt" },
+            // The output is never written by the MCP tool, so it is not checked there
+            { generator: "json", output: "../outside.json" },
+          ],
+        };
+      });
+      const copy = await new PlanStore(root).current();
+      const message = async (run: number) =>
+        generate(copy, { run }).then(
+          () => "",
+          (error: Error) => error.message,
+        );
+      expect(await message(0)).toBe(
+        `opentp.cli.yaml: generate.run[0].file: '../secret.txt' leaves the directory of opentp.cli.yaml (${root})`,
+      );
+      expect(await message(1)).toBe(
+        `opentp.cli.yaml: generate.run[1].file: '${path.join(base, "secret.txt")}' is an absolute path: write a path relative to the directory of opentp.cli.yaml`,
+      );
+      expect(await message(2)).toBe(
+        `opentp.cli.yaml: generate.run[2].file: 'linked.txt' leaves the directory of opentp.cli.yaml (${root})`,
+      );
+      expect(await message(3)).toBe(
+        "opentp.cli.yaml: generate.run[3].file: '.git/config' is inside a .git directory",
+      );
+      expect(await message(4)).toBe(
+        "opentp.cli.yaml: generate.run[4].file: the template generator needs a template file",
+      );
+      expect(await message(5)).toBe(
+        `opentp.cli.yaml: generate.run[5].file: file not found: ${path.join(root, "missing.tpl")}`,
+      );
+      expect(await message(6)).toBe("");
+      for (const run of [0, 1, 2]) expect(await message(run)).not.toContain("SECRET");
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 
@@ -468,9 +933,44 @@ describe("PlanStore", () => {
     expect((await store.current()).events).toHaveLength(3);
   });
 
+  it("reloads when opentp.cli.yaml changes and reports its problems from every tool", async () => {
+    const root = planCopy();
+    const store = new PlanStore(root);
+    const first = await store.current();
+    expect(first.keygen?.template).toContain("{area | slug}");
+
+    editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+      delete cli.keygen;
+    });
+    const second = await store.current();
+    expect(second).not.toBe(first);
+    expect(second.keygen).toBeNull();
+
+    editYaml(path.join(root, "opentp.cli.yaml"), (cli) => {
+      cli.opentp = "2026-08";
+      cli.unknownSection = true;
+    });
+    await expect(store.current()).rejects.toThrow(PlanError);
+    await expect(store.current()).rejects.toThrow(
+      "opentp.cli.yaml: unknownSection: Unknown key 'unknownSection' (extensions start with 'x-')",
+    );
+  });
+
+  it("reports the 2026-01 guidance as a PlanError", async () => {
+    const root = planCopy();
+    const file = path.join(root, "opentp.yaml");
+    fs.writeFileSync(
+      file,
+      fs.readFileSync(file, "utf8").replace("opentp: 2026-09", "opentp: 2026-01"),
+    );
+    await expect(new PlanStore(root).current()).rejects.toThrow(
+      /This plan uses OpenTrackPlan 2026-01; .* Run "opentp migrate" to upgrade it/,
+    );
+  });
+
   it("throws PlanError when opentp.yaml is missing or invalid", async () => {
     const root = planCopy();
-    fs.writeFileSync(path.join(root, "opentp.yaml"), "opentp: 2026-01\n");
+    fs.writeFileSync(path.join(root, "opentp.yaml"), "opentp: 2026-09\n");
     await expect(new PlanStore(root).current()).rejects.toThrow(PlanError);
     fs.rmSync(path.join(root, "opentp.yaml"));
     await expect(new PlanStore(root).current()).rejects.toThrow(/opentp.yaml not found/);

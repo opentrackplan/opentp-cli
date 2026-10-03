@@ -1,0 +1,22 @@
+opentp: 2026-09
+
+event:
+  key: onboarding::step_view
+
+  taxonomy: {}
+
+  payload:
+    web:
+      schema:
+        event_name:
+          value: onboarding_step_view
+        step_index:
+          required: true
+        dimension_2: {}
+    mobile:
+      schema:
+        event_name:
+          value: onboarding_step_view
+        step_index:
+          required: true
+        device_is_webview: {}

@@ -69,18 +69,25 @@ npm run typecheck
 
 ```
 src/
-├── cli.ts              # CLI entry point
-├── core/               # Core modules (config, validator, etc.)
-├── rules/              # Validation checks (historical folder name)
-├── transforms/         # String transformations
-├── generators/         # Output generators (JSON, YAML, template)
+├── cli.ts              # CLI entry point (argument parsing, commands, help)
+├── core/               # Plan loading, merge, validation, overlap (config, payload, validator, ...)
+├── checks/             # Check ids: spec.checks, bindings, webhooks
+├── cliconfig/          # opentp.cli.yaml: shape, discovery, tracker binding, application repositories
+├── migrate/            # opentp migrate (2026-01 -> 2026-09)
+├── mcp/                # opentp mcp (MCP server over stdio)
+├── rules/              # Built-in checks (historical folder name)
+├── transforms/         # String transformations (keygen)
+├── generators/         # Output generators (JSON, YAML, template) and the generator context
 ├── types/              # TypeScript type definitions
 └── util/               # Utility functions
 
 dist/                   # Bundled CLI output (esbuild)
 docs/                   # CLI documentation (Starlight)
-tests/data/             # Integration fixtures for validation tests
+schemas/                # opentp.cli.schema.json (generated: npm run schema)
+tests/data/             # Integration fixtures for validation, overlap, migrate and application mode
 ```
+
+`schemas/opentp.cli.schema.json` is generated from `src/cliconfig/schema.ts` with `npm run schema` (needs Bun); a test fails when it is stale.
 
 ### Running Tests
 
@@ -139,8 +146,16 @@ npm run format
 3. `npx tsc --noEmit -p .` and `npx tsc --noEmit -p tsconfig.test.json`
 4. `npm test`
 5. `npm run build`
-6. Smoke tests with the built CLI: `tests/data/coverage-valid` must pass with `count=4`, `tests/data/coverage-invalid` must fail, `opentp mcp` must answer over stdio (`tests/mcp-smoke.mjs`, with plugins that print to stdout), and the `simple` and `full` examples of [opentp-spec](https://github.com/opentrackplan/opentp-spec), checked out at the tag that equals `specVersion` in `package.json`, must pass.
-7. Node 22 job only: a linux-x64 binary compiled with Bun (the version pinned in `release.yml` and in the `bun` devDependency) must pass `--version`, `coverage-valid` and the MCP smoke test, and must ignore a `bunfig.toml` and a `.env` in its working directory.
+6. Smoke tests with the built CLI (the summary line ends with `count=N`; with warnings it reads `warnings=W count=N`):
+   - `tests/data/coverage-valid` passes with `count=4` and no warnings; `tests/data/coverage-invalid` fails with exit code `1`; an unknown command exits `2`; `validate --json -v` prints one JSON document; piped `generate json` equals `-o`;
+   - `tests/data/overlap` passes with `warnings=4 count=12` and fails with `--fail-on overlap`;
+   - `tests/data/application` (an application repository, `plan: ../tracker`) passes with `count=2`, and `fix` there exits `2`;
+   - `opentp migrate` on a copy of `tests/data/migrate-2026-01` produces exactly `tests/data/migrate-2026-01.expected`, the result validates (`warnings=1 count=3`), and a second run prints `Nothing to migrate`;
+   - `opentp mcp` answers over stdio (`tests/mcp-smoke.mjs`, with plugins that print to stdout);
+   - the examples of [opentp-spec](https://github.com/opentrackplan/opentp-spec), checked out at the tag that equals `specVersion` in `package.json`: `simple` and `full` pass with no warnings, and `extensions` passes with exactly two warnings, the `unknownCheck` warnings of its `mytool.*` checks.
+7. Node 22 job only: a linux-x64 binary compiled with Bun (the version pinned in `release.yml` and in the `bun` devDependency) must pass `--version`, `coverage-valid`, `application` and the MCP smoke test, and must ignore a `bunfig.toml` and a `.env` in its working directory.
+
+When a change alters these outputs (messages, counts, fixtures), update `ci.yml` and the binary smoke step of `release.yml` in the same change.
 
 ## Releasing (maintainers)
 
@@ -150,7 +165,7 @@ npm run format
 4. `.github/workflows/release.yml` then:
    - fails unless the tag equals `v` + the `package.json` version (and `package-lock.json` agrees);
    - runs the full CI workflow as its `verify` job;
-   - builds the four binaries (`opentp-linux`, `opentp.exe`, `opentp-mac`, `opentp-mac-intel`, with `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`) and runs each one on its own platform (version, the two fixtures, an unknown command, an external rule, `generate json`, the MCP smoke test, and a check that `bunfig.toml` and `.env` in the working directory are ignored) before uploading it;
+   - builds the four binaries (`opentp-linux`, `opentp.exe`, `opentp-mac`, `opentp-mac-intel`, with `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`) and runs each one on its own platform (version, the coverage, overlap and application fixtures, `opentp migrate` on the migrate fixture, an unknown command, an external rule, `generate json`, the MCP smoke test, and a check that `bunfig.toml` and `.env` in the working directory are ignored) before uploading it;
    - generates `SHA256SUMS` and publishes a GitHub Release with all five files and the changelog section. A tag with a pre-release suffix (`v1.0.0-rc.1`) becomes a GitHub pre-release, which the installers do not treat as latest.
 
 The installers download the latest GitHub Release by default, so they need no change for a release. Never move or re-push a published tag: if a release is broken, release a new patch version.

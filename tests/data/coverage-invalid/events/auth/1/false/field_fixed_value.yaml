@@ -1,0 +1,44 @@
+opentp: 2026-09
+
+event:
+  key: auth::field_fixed_value::p1::internal-false
+
+  # Changing or replacing a fixed value is never ignorable
+  ignore:
+    - path: payload.schema_version
+
+  taxonomy:
+    action: Events cannot change a fixed value of spec.targets.all or replace it
+    action_detail: "test::fixed"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: field_fixed_value
+        event_category:
+          value: auth
+        schema_version:
+          value: 3
+    ios:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: field_fixed_value
+        event_category:
+          value: auth
+        schema_version:
+          enum: [2, 3]
+    android:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: field_fixed_value
+        event_category:
+          value: auth
+        schema_version:
+          dict: data/application_id

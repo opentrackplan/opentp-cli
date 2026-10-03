@@ -1,11 +1,13 @@
-opentp: 2026-01
+opentp: 2026-09
 
 event:
   key: auth::unknown_check::p1::internal-false
 
   taxonomy:
-    action: Field has an unknown check id (should error)
+    action: Unknown check ids are warnings (unknownCheck), reported once per file
     action_detail: "test::checks"
+    # custom_id has the unknown check 'unknown-check' in opentp.yaml: one warning against
+    # opentp.yaml, never per event; at run time the unknown id is skipped
     custom_id: "CUSTOM-123"
 
   payload:
@@ -14,5 +16,10 @@ event:
         value: web-app
       event_name:
         value: unknown_check
+        checks:
+          # Written in the event: one warning for this file (not per target)
+          unknown-event-check: true
+          # Disabled: never reported, never run
+          another-unknown-check: false
       event_category:
         value: auth

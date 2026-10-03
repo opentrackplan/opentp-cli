@@ -1,0 +1,25 @@
+opentp: 2026-09
+event:
+  key: auth::login
+  lifecycle:
+    status: active
+  taxonomy: {}
+  payload:
+    schema:
+      event_category: { value: auth }
+      event_name: { value: login }
+      event_label:
+        value: Sign in
+      # Slots
+      dimension_1:
+        title: Login method
+        type: string
+        example: "0012"
+        checks:
+          not-empty: true
+          webhook-1: true
+      dimension_2: { title: Screen, type: string }
+      dimension_3: {}
+      dimension_5: { title: Experiment, type: string }
+      button_id:
+        type: string

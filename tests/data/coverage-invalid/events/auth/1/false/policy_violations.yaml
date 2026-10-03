@@ -1,0 +1,26 @@
+opentp: 2026-09
+
+event:
+  key: auth::policy_violations::p1::internal-false
+
+  taxonomy:
+    action: Policies of common fields that an event does not follow
+    action_detail: "test::policy"
+
+  payload:
+    web:
+      schema:
+        # policy: fixed needs a value, not an enum
+        application_id:
+          enum: [web-app]
+        # policy: restricted needs value, enum or dict in a layer after spec.targets.all
+        event_category: {}
+        # event_name (policy: specified) is not listed
+    ios:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: policy_violations
+        # spec.targets.ios restricts event_category after the declaring layer: {} is enough
+        event_category: {}

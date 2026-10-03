@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+opentp: 2026-09
+
+keygen:
+  template: "{area | slug}::{event | slug}::p{priority_level}::internal-{is_internal}"
+  transforms:
+    slug:
+      - lower
+      - trim
+      - replace:
+          from: " "
+          to: "_"
+      - truncate: 160
+
+checks:
+  bindings:
+    # A rule binding with default params (value_checks_fail.yaml)
+    short-name:
+      rule: max-length
+      params: 5

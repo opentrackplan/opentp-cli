@@ -1,0 +1,24 @@
+opentp: '2026-09'
+event:
+  key: auth::logout
+  taxonomy: {}
+  payload:
+    all:
+      current: 2.0.0
+      1.0.0:
+        meta:
+          deprecated:
+            reason: Old builds did not send the event name
+        schema:
+          event_category: { value: auth }
+      2.0.0:
+        $ref: 1.0.0
+        schema:
+          event_name: { value: logout }
+          dimension_3: { type: string }
+          dimension_6: { type: string, example: "42" }
+          button_id: { type: string }
+          session_note:
+            type: string
+            checks:
+              webhook-1: true

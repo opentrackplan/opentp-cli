@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 info:
   title: Coverage Fixture (Valid)
@@ -18,18 +18,6 @@ spec:
       minLength: 3
       maxLength: 160
       pattern: "^[a-z0-9_]+::[a-z0-9_]+::[a-z0-9_]+::[a-z0-9_]+::p[0-9]+::internal-(true|false)$"
-
-    x-opentp:
-      keygen:
-        template: "{area | slug}::{event | slug}::{verb | slug}::{object | slug}::p{priority_level}::internal-{is_internal}"
-        transforms:
-          slug:
-            - lower
-            - trim
-            - replace:
-                from: " "
-                to: "_"
-            - truncate: 160
 
     taxonomy:
       area:
@@ -76,30 +64,20 @@ spec:
         title: Custom Id
         type: string
         required: false
-        x-opentp:
-          checks:
-            starts-with: "cid_"
+        checks:
+          starts-with: "cid_"
+      release_date:
+        title: Release Date
+        type: string
+        format: date
+        required: false
 
     payload:
       targets:
         all: [web, ios, android]
         mobile: [ios, android]
+      # Field catalog: the fields events may use (listing a field here does not add it to events)
       schema:
-        application_id:
-          type: string
-          dict: data/application_id
-          required: true
-          valueRequired: true
-        build_variant:
-          type: string
-          required: false
-          valueRequired: true
-        event_name:
-          type: string
-          required: true
-        event_category:
-          type: string
-          required: true
         dimension_1:
           type: string
           name: orgType
@@ -107,33 +85,30 @@ spec:
           description: Logical organization type stored in analytics slot dimension_1
           enum: [startup, enterprise, agency]
           example: enterprise
-          required: false
         auth_method:
           type: string
           enum: [email, google, github]
-          required: false
+        plan_tier:
+          type: string
+          enum: [free, pro, team]
+          # Dropped silently where an event narrows the enum without it
+          example: team
         user_id:
           type: string
-          required: false
         device_model:
           type: string
-          required: false
         step_index:
           type: number
-          required: false
         is_internal:
           type: boolean
-          required: false
         priority_level:
           type: number
-          required: false
         tags:
           type: array
           uniqueItems: true
           items:
             type: string
             minLength: 1
-          required: false
 
     pii:
       kind:
@@ -149,18 +124,47 @@ spec:
         jira:
           type: string
           required: true
-          pattern: "^[A-Z]+-[0-9]+$"
+          checks:
+            # A portable check from spec.checks
+            jira-key: true
         retention_days:
           type: integer
           enum: [0, 7, 30]
           required: false
 
+  checks:
+    jira-key:
+      description: A ticket key such as ANALYTICS-123
+      pattern: "^[A-Z]+-[0-9]+$"
+      maxLength: 32
+
+  # Common fields: part of every event on a target
   targets:
-    ios:
-      title: iOS
+    all:
+      title: Every target
+      description: Fields that every event sends on every target
       schema:
-        device_model:
+        application_id:
+          type: string
+          dict: data/application_id
+          policy: fixed
+        event_name:
+          type: string
+          policy: fixed
+          checks:
+            # A rule binding from opentp.cli.yaml
+            snake-case-name: true
+        event_category:
+          type: string
+          policy: restricted
+        build_variant:
           type: string
           required: false
-          x-opentp:
-            role: shared
+    ios:
+      title: iOS
+      x-acme-team: mobile
+      schema:
+        # The type comes from the catalog; every iOS event must list it
+        device_model:
+          description: Model identifier reported by iOS
+          policy: specified

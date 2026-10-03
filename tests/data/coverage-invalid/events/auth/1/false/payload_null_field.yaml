@@ -1,0 +1,19 @@
+opentp: 2026-09
+
+event:
+  key: auth::payload_null_field::p1::internal-false
+
+  taxonomy:
+    action: A payload field with no definition (null) is an error, not a crash
+    action_detail: "test::payload"
+
+  payload:
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: payload_null_field
+      event_category:
+        value: auth
+      # Write {} to list a field without changes
+      user_id:

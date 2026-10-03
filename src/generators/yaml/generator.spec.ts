@@ -1,4 +1,9 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { PlanStore } from "../../mcp/plan";
+import { generatorContext } from "../context";
+import { createEffectiveResolver } from "../effective";
 import type { GeneratorContext } from "../types";
 import { yamlGenerator } from "./index";
 
@@ -42,6 +47,8 @@ const mockContext: GeneratorContext = {
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
   options: {},
+  effective: (event) =>
+    createEffectiveResolver(mockContext.config, mockContext.dictionaries)(event),
 };
 
 describe("yaml generator", () => {
@@ -78,5 +85,40 @@ describe("yaml generator", () => {
     expect(result.stdout).toContain("dictionaries:");
     expect(result.stdout).toContain("actions:");
     expect(result.stdout).toContain("- click");
+  });
+});
+
+describe("yaml export of a 2026-09 plan", () => {
+  it("writes repeated definitions in full, without anchors and aliases", async () => {
+    const plan = await new PlanStore(path.resolve("tests/data/coverage-valid")).current();
+    const result = await yamlGenerator.generate(
+      generatorContext({
+        config: plan.config,
+        events: plan.events,
+        dictionaries: plan.dictionaries,
+        options: {},
+        tracker: null,
+        cliConfig: null,
+      }),
+    );
+    const text = result.stdout as string;
+    expect(text).not.toMatch(/(^|\s)[&*]a\d+/m);
+    const data = parse(text);
+    expect(Object.keys(data)).toEqual([
+      "opentp",
+      "info",
+      "catalog",
+      "targets",
+      "checks",
+      "events",
+      "dictionaries",
+    ]);
+    // Every event has the same common fields, each written out
+    for (const event of data.events) {
+      expect(event.effectivePayload.web.fields.build_variant).toEqual({
+        type: "string",
+        required: false,
+      });
+    }
   });
 });

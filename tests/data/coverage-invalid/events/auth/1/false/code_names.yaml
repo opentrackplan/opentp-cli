@@ -1,0 +1,24 @@
+opentp: 2026-09
+
+event:
+  key: auth::code_names::p1::internal-false
+
+  taxonomy:
+    action: Two fields of one event version with the same code-facing name
+    action_detail: "test::names"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: code_names
+        event_category:
+          value: auth
+        screen_name:
+          name: user_email
+        user_email: {}
+        # build_variant is a common field
+        ticket_id:
+          name: build_variant

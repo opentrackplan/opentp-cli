@@ -1,0 +1,17 @@
+opentp: 2026-09
+
+event:
+  key: search::suggest
+
+  taxonomy: {}
+
+  payload:
+    web:
+      schema:
+        event_category:
+          value: search
+        event_name:
+          value: search
+        screen:
+          enum: [settings, checkout]
+          required: true

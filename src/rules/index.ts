@@ -5,6 +5,7 @@ export {
   hasRule,
   loadExternalRules,
   registerRule,
+  runRule,
   validateWithRules,
 } from "./registry";
 export * from "./types";
@@ -21,7 +22,6 @@ import { notEmpty } from "./not-empty";
 import { pattern } from "./pattern";
 import { registerRule } from "./registry";
 import { startsWith } from "./starts-with";
-import { webhook } from "./webhook";
 
 // Register built-in rules
 registerRule(maxLength);
@@ -31,4 +31,3 @@ registerRule(contains);
 registerRule(startsWith);
 registerRule(endsWith);
 registerRule(notEmpty);
-registerRule(webhook);

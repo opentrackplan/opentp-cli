@@ -1,0 +1,16 @@
+# Skeleton for new events: copy it to events/<area>/<event>.yaml
+opentp: 2026-01
+event:
+  key: area::event
+  taxonomy: {}
+  payload:
+    schema:
+      event_category: { value: "<event_category>" }
+      event_name: { value: "<event_name>" }
+      event_label: { value: "<event_label>" }
+      dimension_1:
+        title: ""
+        type: string
+        enum: []
+      button_id:
+        type: integer

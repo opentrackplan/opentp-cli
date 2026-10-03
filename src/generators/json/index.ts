@@ -1,28 +1,11 @@
+import { buildExportData } from "../export";
 import type { GeneratorContext, GeneratorDefinition, GeneratorResult } from "../types";
-
-/**
- * Build export object from context
- */
-function buildExportData(context: GeneratorContext) {
-  const { config, events, dictionaries } = context;
-
-  return {
-    opentp: config.opentp,
-    info: config.info,
-    events: events.map((e) => ({
-      key: e.key,
-      taxonomy: e.taxonomy,
-      lifecycle: e.lifecycle,
-      payload: e.payload,
-    })),
-    dictionaries: Object.fromEntries(dictionaries),
-  };
-}
 
 /**
  * JSON generator
  *
- * Exports all events and dictionaries as JSON.
+ * Exports the catalog, spec.targets, spec.checks, all events (raw payload and effective payload)
+ * and dictionaries as JSON.
  *
  * Options:
  *   --output <path>  Output file path (default: stdout)

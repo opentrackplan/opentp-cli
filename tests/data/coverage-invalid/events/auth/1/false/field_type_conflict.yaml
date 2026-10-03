@@ -1,0 +1,28 @@
+opentp: 2026-09
+
+event:
+  key: auth::field_type_conflict::p1::internal-false
+
+  # A type that differs from the catalog is never ignorable; the value check is
+  ignore:
+    - path: payload.screen_name
+
+  taxonomy:
+    action: An event changes the type of a field and of array items
+    action_detail: "test::types"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: field_type_conflict
+        event_category:
+          value: auth
+        screen_name:
+          type: integer
+          value: 3
+        tags:
+          items:
+            type: integer

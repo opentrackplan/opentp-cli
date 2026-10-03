@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { createTransforms } from "../transforms";
-import type { EventFile, OpenTPConfig, ResolvedEvent, TaxonomyField } from "../types";
+import type { EventFile, KeygenConfig, OpenTPConfig, ResolvedEvent, TaxonomyField } from "../types";
 import {
   applyPattern,
   extractTemplateVariables,
@@ -13,10 +14,12 @@ import {
   scanDirectory,
 } from "../util";
 import { getKeygenProblems } from "./config";
+import { walkEventDocument } from "./document";
 
 /**
  * A file that could not be loaded. `file` is the path relative to the events root, or
- * "opentp.yaml" for a configuration problem found while loading (no event was loaded for it).
+ * "opentp.yaml" / "opentp.cli.yaml" for a configuration problem found while loading (no event was
+ * loaded for it).
  */
 export interface EventLoadIssue {
   file: string;
@@ -42,6 +45,13 @@ export interface EventLoadContext {
   keygen: Keygen | null;
 }
 
+export interface LoadEventsOptions {
+  /** `keygen` from opentp.cli.yaml (key generation is a tool setting, not part of the plan) */
+  keygen?: KeygenConfig | null;
+  /** Absolute paths that are never read as events (the plan root's tool files) */
+  skipFiles?: ReadonlySet<string>;
+}
+
 /** The result of loading one event document (see loadEventDocument) */
 export type EventDocumentResult =
   | { status: "loaded"; event: ResolvedEvent }
@@ -51,15 +61,16 @@ export type EventDocumentResult =
 
 /**
  * Prepares loading single event documents. A transform step factory that throws while the keygen
- * pipelines are built is pushed to `issues` (against opentp.yaml); other keygen problems are reported
- * once by validateConfig, and they only mean that no expected key is generated.
+ * pipelines are built is pushed to `issues` (against opentp.cli.yaml); other keygen problems are
+ * reported once by validateEvents, and they only mean that no expected key is generated.
  */
 export function createEventLoadContext(
   config: OpenTPConfig,
   fileTemplate: string,
+  keygen: KeygenConfig | null | undefined,
   issues: EventLoadIssue[] = [],
 ): EventLoadContext {
-  return { config, fileTemplate, keygen: prepareKeygen(config, issues) };
+  return { config, fileTemplate, keygen: prepareKeygen(keygen, config, issues) };
 }
 
 /**
@@ -77,6 +88,7 @@ export function loadEvents(
   eventsPath: string,
   fileTemplate: string,
   config: OpenTPConfig,
+  options: LoadEventsOptions = {},
 ): LoadEventsResult {
   const events: ResolvedEvent[] = [];
   const issues: EventLoadIssue[] = [];
@@ -96,10 +108,12 @@ export function loadEvents(
 
   const allFiles = scanDirectory(eventsPath);
   const yamlFiles = filterByExtension(allFiles, [".yaml", ".yml"]);
+  const skipFiles = options.skipFiles ?? new Set<string>();
 
-  const context = createEventLoadContext(config, fileTemplate, issues);
+  const context = createEventLoadContext(config, fileTemplate, options.keygen, issues);
 
   for (const [relativePath, absolutePath] of yamlFiles) {
+    if (skipFiles.has(path.resolve(absolutePath))) continue;
     const result = loadEventDocument(context, relativePath, absolutePath, () =>
       loadYaml<unknown>(absolutePath),
     );
@@ -161,6 +175,10 @@ export function loadEventDocument(
 
   const eventFile = document as unknown as EventFile;
 
+  // One walk of the raw document: removed keywords, field definitions that are not mappings, and
+  // every written check id and dictionary reference (checked once per file by validateEvents)
+  const walk = walkEventDocument(document);
+
   // Extract taxonomy from path and file
   let taxonomy: Record<string, unknown>;
   try {
@@ -192,27 +210,33 @@ export function loadEventDocument(
       taxonomy,
       lifecycle: eventFile.event.lifecycle,
       aliases: eventFile.event.aliases,
-      ignore: eventFile.event.ignore ?? [],
+      ignore: Array.isArray(eventFile.event.ignore) ? eventFile.event.ignore : [],
       payload: eventFile.event.payload,
+      fileIssues: walk.issues,
+      checkRefs: walk.checks,
+      dictRefs: walk.dicts,
     },
   };
 }
 
 /**
  * Builds the keygen template and its named pipelines, or returns null when keygen is not
- * configured or not usable (see getKeygenProblems, reported once by validateConfig).
+ * configured or not usable (see getKeygenProblems, reported once by validateEvents).
  */
-function prepareKeygen(config: OpenTPConfig, issues: EventLoadIssue[]): Keygen | null {
-  const keygen = config.spec.events["x-opentp"]?.keygen;
-  if (!keygen || getKeygenProblems(config).length > 0) return null;
+function prepareKeygen(
+  keygen: KeygenConfig | null | undefined,
+  config: OpenTPConfig,
+  issues: EventLoadIssue[],
+): Keygen | null {
+  if (!keygen || getKeygenProblems(keygen, config).length > 0) return null;
 
   try {
     return { template: keygen.template, transforms: createTransforms(keygen.transforms ?? {}) };
   } catch (error) {
-    // A transform step factory (e.g. an external transform) threw while building a pipeline
+    // A transform step factory (e.g. a plugin) threw while building a pipeline
     issues.push({
-      file: "opentp.yaml",
-      path: "spec.events.x-opentp.keygen.transforms",
+      file: "opentp.cli.yaml",
+      path: "keygen.transforms",
       message: `Cannot build keygen pipelines: ${error instanceof Error ? error.message : String(error)}`,
     });
     return null;

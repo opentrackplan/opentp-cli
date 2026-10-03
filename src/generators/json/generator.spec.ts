@@ -1,4 +1,8 @@
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
+import { PlanStore } from "../../mcp/plan";
+import { generatorContext } from "../context";
+import { createEffectiveResolver } from "../effective";
 import type { GeneratorContext } from "../types";
 import { jsonGenerator } from "./index";
 
@@ -42,6 +46,8 @@ const mockContext: GeneratorContext = {
   ],
   dictionaries: new Map([["actions", ["click", "view", "submit"]]]),
   options: {},
+  effective: (event) =>
+    createEffectiveResolver(mockContext.config, mockContext.dictionaries)(event),
 };
 
 describe("json generator", () => {
@@ -103,5 +109,105 @@ describe("json generator", () => {
     });
     expect(toStdout.stdout?.endsWith("}\n")).toBe(true);
     expect(toFile.files?.[0].content).toBe(toStdout.stdout);
+  });
+});
+
+describe("json export of a 2026-09 plan", () => {
+  const ONBOARDING_KEY =
+    "onboarding::onboarding_step_complete::complete::onboarding_step::p1::internal-true";
+
+  async function exportPlan() {
+    const plan = await new PlanStore(path.resolve("tests/data/coverage-valid")).current();
+    const context = generatorContext({
+      config: plan.config,
+      events: plan.events,
+      dictionaries: plan.dictionaries,
+      options: {},
+      tracker: plan.tracker,
+      cliConfig: plan.cli?.config ?? null,
+    });
+    const result = await jsonGenerator.generate(context);
+    return {
+      plan,
+      context,
+      text: result.stdout as string,
+      data: JSON.parse(result.stdout as string),
+    };
+  }
+
+  it("adds the catalog, spec.targets and spec.checks at the top level", async () => {
+    const { plan, data } = await exportPlan();
+    expect(Object.keys(data)).toEqual([
+      "opentp",
+      "info",
+      "catalog",
+      "targets",
+      "checks",
+      "events",
+      "dictionaries",
+    ]);
+    expect(data.catalog).toEqual(plan.config.spec.events.payload.schema);
+    expect(data.targets).toEqual(plan.config.spec.targets);
+    expect(data.checks).toEqual(plan.config.spec.checks);
+    // Dictionaries by name, events in the given order (the CLI sorts them by file path)
+    expect(Object.keys(data.dictionaries)).toEqual([...plan.dictionaries.keys()].sort());
+    expect(data.events.map((event: { key: string }) => event.key)).toEqual(
+      plan.events.map((event) => event.key),
+    );
+  });
+
+  it("keeps the raw payload and adds the effective payload per target and version", async () => {
+    const { plan, data } = await exportPlan();
+    const raw = plan.events.find((event) => event.key === ONBOARDING_KEY);
+    const event = data.events.find(
+      (candidate: { key: string }) => candidate.key === ONBOARDING_KEY,
+    );
+    expect(event.payload).toEqual(raw?.payload);
+    const { web, ios, android } = event.effectivePayload;
+    expect(Object.keys(event.effectivePayload)).toEqual(["web", "ios", "android"]);
+
+    // Versioned: the current version (through its alias), every version, and `fields` = current
+    expect(web.current).toBe("1.1.0");
+    expect(web.aliases).toEqual({ stable: "1.1.0", legacy: "1.0.0" });
+    expect(Object.keys(web.versions)).toEqual(["1.0.0", "1.1.0"]);
+    expect(web.versions["1.0.0"].deprecated).toBe(true);
+    expect(web.versions["1.1.0"]).not.toHaveProperty("deprecated");
+    expect(web.fields).toEqual(web.versions["1.1.0"].fields);
+    // Common fields first, then the fields the version lists (after $ref)
+    expect(Object.keys(web.fields)).toEqual([
+      "application_id",
+      "event_name",
+      "event_category",
+      "build_variant",
+      "step_index",
+      "auth_method",
+      "device_model",
+    ]);
+    expect(web.fields.application_id).toEqual({
+      type: "string",
+      policy: "fixed",
+      value: "web-app",
+    });
+    // The catalog type and the event's narrowing
+    expect(web.fields.auth_method).toEqual({ type: "string", dict: "data/social_auth_methods" });
+    expect(ios.current).toBe("ios-1");
+    expect(ios.fields.device_model).toMatchObject({ type: "string", required: true });
+
+    // Unversioned: only the fields
+    expect(Object.keys(android)).toEqual(["fields"]);
+    expect(android.fields.tags).toMatchObject({
+      type: "array",
+      items: { type: "string", minLength: 1, enum: ["onboarding", "activation"] },
+    });
+  });
+
+  it("is deterministic and gives each call its own copy", async () => {
+    const first = await exportPlan();
+    const second = await exportPlan();
+    expect(second.text).toBe(first.text);
+    const event = first.plan.events[0];
+    const copy = first.context.effective(event);
+    copy.web.fields.application_id.title = "changed";
+    expect(first.context.effective(event).web.fields.application_id).not.toHaveProperty("title");
   });
 });

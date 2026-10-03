@@ -1,0 +1,31 @@
+opentp: 2026-01
+event:
+  key: auth::login
+  lifecycle:
+    status: active
+  taxonomy: {}
+  payload:
+    schema:
+      event_category: { value: auth }
+      event_name: { value: login }
+      event_label:
+        value: Sign in
+        required: false   # 2026-01: the label may be missing
+      # Slots
+      dimension_1:
+        title: Login method
+        type: string
+        example: 0012
+        x-opentp:
+          checks:
+            not-empty: true
+            webhook:
+              url: https://example.com/hooks/field
+              timeout: 2000
+      dimension_2: { title: Screen, type: string }
+      dimension_3:
+        enum: []
+      dimension_5: { title: Experiment, type: string, enum: [] }
+      button_id:
+        type: string
+        valueRequired: false

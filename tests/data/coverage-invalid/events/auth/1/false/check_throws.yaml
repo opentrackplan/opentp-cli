@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 # "ticket" uses the external check "throwing-check" (external-rules/throwing-check), which throws.
 # fixtures.spec.ts loads it; the CLI needs --external-rules "$PWD/tests/data/coverage-invalid/external-rules"

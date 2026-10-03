@@ -1,0 +1,27 @@
+opentp: 2026-09
+
+event:
+  key: auth::field_presence::p1::internal-false
+
+  # required: false on a field that is always present is never ignorable
+  ignore:
+    - path: payload.event_category
+
+  taxonomy:
+    action: required false on fields with a fixed value or a strict policy
+    action_detail: "test::presence"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: field_presence
+        # policy: restricted
+        event_category:
+          enum: [auth]
+          required: false
+        # value: 2 in spec.targets.all
+        schema_version:
+          required: false

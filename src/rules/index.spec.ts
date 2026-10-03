@@ -19,7 +19,8 @@ describe("rules registry", () => {
     expect(names).toContain("ends-with");
     expect(names).toContain("contains");
     expect(names).toContain("not-empty");
-    expect(names).toContain("webhook");
+    // Webhooks are bound in opentp.cli.yaml (checks.bindings.<id>.webhook), not rules
+    expect(names).not.toContain("webhook");
   });
 
   it("should get rule by name", () => {
@@ -66,16 +67,14 @@ describe("validateWithRules", () => {
     expect(errors).toHaveLength(2);
   });
 
-  it("should report unknown rules", async () => {
+  it("skips unknown rules (reported statically) and rules disabled with false", async () => {
     const errors = await validateWithRules(
-      "test",
-      {
-        "unknown-rule": true,
-      },
+      "",
+      { "unknown-rule": true, "not-empty": false, "max-length": 0 },
       ctx,
     );
-    expect(errors).toHaveLength(1);
-    expect(errors[0].code).toBe("UNKNOWN_CHECK");
+    expect(errors).toEqual([]);
+    expect(await validateWithRules("", { "not-empty": true }, ctx)).toHaveLength(1);
   });
 
   it("turns a throwing or rejecting rule into an error and keeps going", async () => {

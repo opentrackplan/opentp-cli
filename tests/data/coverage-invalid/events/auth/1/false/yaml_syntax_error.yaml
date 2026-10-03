@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 # Broken YAML (a nested mapping in a compact mapping): the file cannot be loaded and must fail
 # the run with a file-scoped error that has a line and column.

@@ -1,4 +1,4 @@
-opentp: 2026-01
+opentp: 2026-09
 
 info:
   title: Coverage Fixture (Invalid)
@@ -16,18 +16,6 @@ spec:
   events:
     key:
       pattern: "^[a-z0-9_]+::[a-z0-9_]+::p[0-9]+::internal-(true|false)$"
-
-    x-opentp:
-      keygen:
-        template: "{area | slug}::{event | slug}::p{priority_level}::internal-{is_internal}"
-        transforms:
-          slug:
-            - lower
-            - trim
-            - replace:
-                from: " "
-                to: "_"
-            - truncate: 160
 
     taxonomy:
       area:
@@ -74,9 +62,9 @@ spec:
         title: Custom Id
         type: string
         required: false
-        x-opentp:
-          checks:
-            unknown-check: true
+        checks:
+          # Not in spec.checks, not a rule, not bound: one unknownCheck warning against opentp.yaml
+          unknown-check: true
       team:
         title: Team
         type: string
@@ -87,10 +75,9 @@ spec:
         title: Ticket
         type: string
         required: false
-        x-opentp:
-          checks:
-            # External check that throws (external-rules/throwing-check)
-            throwing-check: true
+        checks:
+          # External check that throws (external-rules/throwing-check)
+          throwing-check: true
 
     payload:
       targets:
@@ -100,25 +87,30 @@ spec:
         # "desktop" is not in targets.all: reported once against opentp.yaml, and a payload
         # selector "legacy" covers no target
         legacy: [desktop]
+      # Field catalog: the fields events may use
       schema:
-        application_id:
-          type: string
-          dict: data/application_id
-          required: true
-          valueRequired: true
-        build_variant:
-          type: string
-          required: false
-          valueRequired: true
-        event_name:
-          type: string
-          required: true
-        event_category:
-          type: string
-          required: true
         user_id:
           type: string
           required: false
+          # Removed in 2026-09: reported once against opentp.yaml
+          x-opentp:
+            role: attribute
+        # Portable check (spec.checks), format and a rule binding (opentp.cli.yaml), see
+        # value_checks_fail.yaml
+        ticket_id:
+          type: string
+          required: false
+          checks:
+            ticket-key: true
+        user_email:
+          type: string
+          format: email
+          required: false
+        screen_name:
+          type: string
+          required: false
+          checks:
+            short-name: true
         # A dict override must narrow these (see payload_dict_override_not_subset.yaml)
         sign_in_method:
           type: string
@@ -128,6 +120,38 @@ spec:
           type: string
           dict: governance/pii-owners
           required: false
+        tags:
+          type: array
+          items:
+            type: string
+            enum: [a, b, c]
+        plan_tier:
+          type: string
+          enum: [free, pro, team]
+          example: team
+        dimension_1: &dim
+          type: string
+        dimension_2: *dim
+        dimension_3: *dim
+        dimension_10: *dim
+        # Reported once against opentp.yaml: an enum member longer than maxLength, an example
+        # outside the enum and too long
+        country_code:
+          type: string
+          maxLength: 2
+          enum: [US, DEU]
+          example: FRA
+        # No such dictionary: reported once against opentp.yaml
+        region:
+          type: string
+          dict: geo/regions
+        # An empty enum: reported once against opentp.yaml
+        empty_choice:
+          type: string
+          enum: []
+        # spec.targets.ios changes the type: reported once against opentp.yaml
+        session_length:
+          type: integer
 
     pii:
       kind:
@@ -145,7 +169,73 @@ spec:
           required: true
           pattern: "^[A-Z]+-[0-9]+$"
 
-  # "desktop" is not in spec.events.payload.targets.all: reported once against opentp.yaml
+  checks:
+    ticket-key:
+      pattern: "^[A-Z]+-[0-9]+$"
+    # No constraint keyword: reported once against opentp.yaml
+    empty-check:
+      title: Nothing to check
+    # Same id as the built-in check: the plan definition wins, with one warning
+    ends-with:
+      maxLength: 40
+
+  # Common fields: part of every event on a target
   targets:
+    all:
+      title: Every target
+      schema:
+        application_id:
+          type: string
+          dict: data/application_id
+          required: true
+          policy: fixed
+          # Removed in 2026-09: reported once against opentp.yaml
+          valueRequired: true
+        event_name:
+          type: string
+          required: true
+          policy: specified
+        # The declaring layer (spec.targets.all) sets the enum: events must still restrict the
+        # field, except on ios, whose layer restricts it after the declaring layer
+        event_category:
+          type: string
+          enum: [auth, badarea]
+          policy: restricted
+        build_variant:
+          type: string
+          required: false
+        # Same code-facing name as build_variant: reported once against opentp.yaml
+        client_build:
+          type: string
+          name: build_variant
+        schema_version:
+          type: integer
+          value: 2
+        # A fixed value of the wrong type: reported once against opentp.yaml
+        sdk_name:
+          type: string
+          value: 7
+        # required: false next to a fixed value: reported once against opentp.yaml
+        legacy_flag:
+          type: boolean
+          value: false
+          required: false
+    ios:
+      title: iOS
+      schema:
+        event_category:
+          enum: [auth, badarea]
+        # A later layer cannot lower a policy: reported once against opentp.yaml
+        application_id:
+          policy: restricted
+        # Not a subset of the catalog enum: reported once against opentp.yaml
+        sign_in_method:
+          enum: [email, apple]
+        # Not the catalog type: reported once against opentp.yaml
+        session_length:
+          type: number
+        # No type in any layer: reported once against opentp.yaml
+        os_name: {}
+    # "desktop" is not in spec.events.payload.targets.all: reported once against opentp.yaml
     desktop:
       title: Desktop

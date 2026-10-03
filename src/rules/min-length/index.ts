@@ -1,7 +1,10 @@
+import { codePointLength } from "../../core/constraints";
 import type { RuleDefinition } from "../types";
 
 /**
  * Validates that a string value has at least minimum length
+ *
+ * The length is counted in Unicode code points (an emoji counts as 1).
  *
  * Params: number (min length)
  *
@@ -22,10 +25,11 @@ export const minLength: RuleDefinition = {
       };
     }
 
-    if (value.length < minLen) {
+    const length = codePointLength(value);
+    if (length < minLen) {
       return {
         valid: false,
-        error: `Length ${value.length} is less than minimum ${minLen}`,
+        error: `Length ${length} is less than minimum ${minLen}`,
         code: "MIN_LENGTH_NOT_MET",
       };
     }

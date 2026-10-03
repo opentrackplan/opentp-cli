@@ -1,0 +1,13 @@
+opentp: 2026-09
+
+event:
+  key: cart::add
+
+  taxonomy: {}
+
+  payload:
+    schema:
+      event_category:
+        value: cart
+      event_name:
+        value: add

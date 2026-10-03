@@ -1,0 +1,22 @@
+opentp: 2026-09
+
+event:
+  key: auth::enum_empty::p1::internal-false
+
+  taxonomy:
+    action: Target-independent problems are reported once per file at the written path
+    action_detail: "test::once"
+
+  payload:
+    # Implicit all: web, ios and android
+    schema:
+      application_id:
+        value: web-app
+      event_name:
+        value: enum_empty
+      event_category:
+        value: auth
+      sign_in_method:
+        enum: []
+      owner_team:
+        dict: governance/teams

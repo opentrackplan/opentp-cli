@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://opentp.dev/schemas/cli/opentp.cli.schema.json
+# An application repository: no opentp.yaml here; plan: names the tracking plan it uses.
+# A local path is relative to this file; a git URL pins a tag or a commit SHA, e.g.
+#   plan: git+ssh://git@example.com/acme/tracking-plan.git#v1.0.0
+opentp: 2026-09
+plan: ../tracker
+
+# Merged over the tracker section of the plan repository's opentp.cli.yaml (this file wins)
+tracker:
+  type: snowplow
+  map:
+    step_index: contexts.dimensions
+
+# Merged by id over the plan repository's checks.bindings and checks.severity
+checks:
+  severity:
+    overlap: error
+
+generate:
+  run:
+    - { generator: json, target: web, events: { area: auth }, output: build/tracking-plan.json }

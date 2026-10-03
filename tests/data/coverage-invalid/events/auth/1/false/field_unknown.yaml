@@ -1,0 +1,42 @@
+opentp: 2026-09
+
+event:
+  key: auth::field_unknown::p1::internal-false
+
+  # Unknown fields (closed vocabulary) are never ignorable
+  ignore:
+    - path: payload.event_nme
+
+  taxonomy:
+    action: Fields that are neither catalog fields nor common fields of a target
+    action_detail: "test::vocabulary"
+
+  payload:
+    web:
+      schema:
+        application_id:
+          value: web-app
+        event_name:
+          value: field_unknown
+        event_category:
+          value: auth
+        # One name at the smallest edit distance
+        event_nme:
+          value: field_unknown
+        # A name equal ignoring case wins
+        Event_Category:
+          value: auth
+        # Three names at distance 1 (dimension_10 is further away)
+        dimension_:
+          value: x
+    mobile:
+      schema:
+        application_id:
+          value: mobile-app
+        event_name:
+          value: field_unknown
+        event_category:
+          value: auth
+        # A common field of ios only: unknown on android
+        os_name:
+          value: iOS
