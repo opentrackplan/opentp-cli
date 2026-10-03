@@ -45,7 +45,7 @@ body:
     attributes:
       label: Versions
       description: Output of `opentp --version`
-      placeholder: "opentp v0.9.0 (spec 2026-01)"
+      placeholder: "opentp v0.9.1 (spec 2026-01)"
     validations:
       required: true
 

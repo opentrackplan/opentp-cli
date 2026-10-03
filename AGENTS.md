@@ -10,7 +10,7 @@ and exports the plan through generators.
   npm, now or later**; `package.json` is `"private": true` and the old npm package `opentp` (0.5.0) is
   obsolete. npm is only a development tool here. A Bun-only toolchain is a possible future direction,
   not decided.
-- **Version:** `package.json` `version` (0.9.0). Current release and installer state: see
+- **Version:** `package.json` `version` (0.9.1). Current release and installer state: see
   "Distribution state" under Known issues.
 - **Spec support:** **exactly `2026-01`** (`package.json` `specVersion`, read by `src/meta.ts`). Any
   other `opentp:` value is a hard error; older plans are not accepted.
@@ -50,12 +50,12 @@ and exports the plan through generators.
 |---|---|
 | Language | TypeScript (strict). Source is ESM (`"type": "module"`) |
 | Node bundle | esbuild `src/index.ts` -> `dist/index.cjs` (CJS, target node18, `#!/usr/bin/env node`). Used for development, CI smoke tests and `npm link`; never published. `main` and `bin.opentp` both point to it (`files` is kept, but `private: true` blocks `npm publish`). No `exports`, no `types`, no `.d.ts`. The esbuild target only sets the syntax level; it is deliberately left below `engines` |
-| Binaries | `bun build src/cli.ts --compile` (the entry is `cli.ts`, not `index.ts`). The only distributed artifact |
+| Binaries | `bun build src/cli.ts --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv` (the entry is `cli.ts`, not `index.ts`; the two flags are mandatory, see Known issues). The only distributed artifact |
 | Runtime deps | `yaml` ^2.8.4, `@modelcontextprotocol/server` ^2.3.0 (MCP SDK v2) and `zod` ^4 (its schema library, also imported directly); all bundled |
-| Dev tooling | vitest 4.0.16, Biome 2.3.11, esbuild 0.25.x, TypeScript 5.9.x, `bun` ^1.3.5 as an npm devDependency, `@modelcontextprotocol/client` (MCP tests only) |
+| Dev tooling | vitest 4.0.16, Biome 2.3.11, esbuild 0.25.x, TypeScript 5.9.x, `bun` ^1.4.2 as an npm devDependency (same version as `bun-version` in both workflows), `@modelcontextprotocol/client` (MCP tests only) |
 | Node | `engines`: `^20.19.0 \|\| >=22.12.0` (what vite 7 / vitest 4 need; Node 18 is EOL). It describes only the development toolchain (build from source, tests); users run the binaries, which embed the Bun runtime and need no Node.js. Documented in README and getting-started ("From source") and CONTRIBUTING. The bundle's node18 syntax target does not make older runtimes supported, they are not tested. CI tests Node 20 and 22. Verified on 22.15 |
 | TypeScript configs | `tsconfig.json`: `src/` without specs (`resolveJsonModule` for `src/meta.ts`). `tsconfig.test.json` extends it and adds `*.spec.ts`. Both must have 0 errors |
-| CI (`ci.yml`) | Push/PR to main, Node 20 + 22 matrix; also called by `release.yml` (`workflow_call`). `npm ci`, lint, `tsc` (both configs), test, build, smoke tests (fixtures + opentp-spec `examples/{simple,full}` at the tag that equals `specVersion`) |
+| CI (`ci.yml`) | Push/PR to main, Node 20 + 22 matrix; also called by `release.yml` (`workflow_call`). `npm ci`, lint, `tsc` (both configs), test, build, smoke tests (fixtures, MCP + noisy plugins, opentp-spec `examples/{simple,full}` at the tag that equals `specVersion`); the Node 22 job also compiles a linux-x64 binary with Bun 1.4.2 and smoke-tests it |
 | Release (`release.yml`) | On `v*` tags: tag = `package.json` version check, CI as `verify`, four bun binaries (each smoke-tested on its own runner), `SHA256SUMS`, GitHub Release (notes from `CHANGELOG.md`; `-` in the tag = pre-release). Nothing goes to npm. See Release process |
 
 ## Commands
@@ -64,7 +64,7 @@ Run everything from `opentp-cli/`. All results below were verified on 2026-10-02
 
 ```bash
 npm ci                          # install (same as CI)
-npm test                        # vitest run -> 33 files / 322 tests pass
+npm test                        # vitest run -> 33 files / 327 tests pass
 npx vitest run src/core/fixtures.spec.ts                 # integration fixtures only (6 tests)
 npx vitest run src/cli.spec.ts                           # argv parsing, exit codes, stdout/stderr split, generate/fix refusals (in-process main)
 npx vitest run src/external-plugins.spec.ts              # loadExternal{Rules,Transforms,Generators} with temp dirs
@@ -88,7 +88,7 @@ compiled binary (see Release process). `dist/` is not committed and can be stale
 ```bash
 node dist/index.cjs --version   # "opentp v<package.json version> (spec 2026-01)" + "Schemas: https://opentp.dev/schemas/2026-01"
 node dist/index.cjs validate --root tests/data/coverage-valid     # stderr "✓ All events are valid count=4", empty stdout, exit 0
-node dist/index.cjs validate --root tests/data/coverage-invalid   # report on stdout, "... errorCount=35 eventCount=19" on stderr, exit 1
+node dist/index.cjs validate --root tests/data/coverage-invalid   # report on stdout, "... errorCount=37 eventCount=20" on stderr, exit 1
 node dist/index.cjs valdiate                                      # "✗ Unknown command 'valdiate'" + usage on stderr, exit 2
 node dist/index.cjs validate --json -v --root tests/data/coverage-invalid 2>/dev/null   # stdout = one JSON document
 # same errors as fixtures.spec.ts (otherwise check_throws.yaml reports "Unknown check: throwing-check"):
@@ -180,7 +180,7 @@ src/
 tests/mcp-smoke.mjs  dependency-free stdio smoke test for `opentp mcp` (CI and the release binary smoke)
 tests/data/mcp-noisy-plugins/  a transform and a check that print to stdout at import (MCP smoke only)
 tests/data/coverage-valid/    fixture plan that must produce zero errors (4 events)
-tests/data/coverage-invalid/  fixture plan with intentional errors (22 matching event files, 19 load;
+tests/data/coverage-invalid/  fixture plan with intentional errors (23 matching event files, 20 load;
                               external-rules/throwing-check is an ESM check that throws)
 docs/*.md            Starlight pages synced to opentp.dev: index, getting-started, validate, fix,
                      generate, mcp, transforms, rules
@@ -259,6 +259,7 @@ it), `.idea/`.
    - `validatePayload`: `resolveEventPayload`, then per **target id x version** on the merged schema
      (base `spec.events.payload.schema` -> `spec.targets.<t>.schema` -> event schema): layer conflicts
      (type change, weakened `required`/`valueRequired`), enum/dict/value exclusivity, dicts,
+     narrowing (an event `value`, `enum` or `dict` must stay within the base enum or dict),
      `valueRequired`, fixed-value type and constraints, checks (only on fixed scalar values), PII.
 10. **Output**: see the CLI reference. For validate/fix the errors are
     `[...loadIssuesToErrors(dictIssues, eventIssues), ...validateEvents(...)]` and the exit code is
@@ -352,7 +353,7 @@ anywhere. Anything unexpected is a `UsageError`: `✗ <message>` plus a two-line
   plus `LineCounter`).
 - **Human output:** `[<event>]` blocks with `  ✗ <path>: <message>` lines (just `  ✗ <message>` when the
   path is empty) on stdout (`formatErrors`, printed with `console.log`), then
-  `✗ ✗ Validation failed errorCount=N eventCount=M` on stderr (a logger line).
+  `✗ Validation failed errorCount=N eventCount=M` on stderr (a logger line).
   Success: `✓ All events are valid count=N` on stderr (logger info), so a valid plan prints nothing to
   stdout. Every logger line (info/debug/warn/error, including the `fix` and `Generated file=...` lines)
   goes to stderr; stdout carries only the report, the `--json` document, help/version, or generator
@@ -367,7 +368,7 @@ planned next step ("phase 2" below).
   `/stdio` subpath, found through the package's `typesVersions` under `moduleResolution: node`). It
   serves MCP revision 2026-07-28 and 2025-era clients (`initialize` handshake) on the same connection
   type. Tool input schemas are `zod/v4` objects. Bundled by esbuild (its CJS build) and by
-  `bun --compile` (verified with Bun 1.3.5 and 1.3.6; the binary grew by about 0.8 MB).
+  `bun --compile` (verified with Bun 1.3.5, 1.3.6 and 1.4.2).
 - **Read-only by design:** no tool writes a file (owner decision 2026-10-03). Agents write event files
   themselves; `suggest_event` and `validate_event_draft` tell them where and whether it is right. Every
   tool has `readOnlyHint: true`. Do not add write tools without the owner (planned only behind an
@@ -497,8 +498,8 @@ against check paths, plus these aliases:
   `cli.ts`. It reads `process.cwd()/tests/data/<name>` (so cwd must be `opentp-cli/`) and returns the
   loaded event count and all errors.
 - **coverage-valid** (4 events): errors (dictionary, load and validation) must be exactly `[]`.
-- **coverage-invalid** (22 matching event files, 19 load): the assertion is **exhaustive**. The sorted
-  `[event, path, message]` tuples must equal `COVERAGE_INVALID_ERRORS` in `fixtures.spec.ts` (35
+- **coverage-invalid** (23 matching event files, 20 load): the assertion is **exhaustive**. The sorted
+  `[event, path, message]` tuples must equal `COVERAGE_INVALID_ERRORS` in `fixtures.spec.ts` (37
   entries, sorted by code point in the test, so the literal's order is free), so a missing, extra or
   duplicated error fails. Every new invalid case needs its tuples added there. The harness loads
   `coverage-invalid/external-rules` (`throwing-check`, ESM `export default`, used by
@@ -686,7 +687,7 @@ Pick the layer by where the problem lives, so that each problem is reported exac
    |---|---|
    | `check-version` | Fails unless the tag equals `v` + `package.json` `version` and `package-lock.json` has the same version |
    | `verify` | Calls `ci.yml` (`workflow_call`): the whole CI, both Node versions |
-   | `build` (needs both) | Per runner: `npm ci --omit=dev`, then `bun build src/cli.ts --compile --target=bun-<target>` with Bun 1.3.5, then "Smoke test the binary" (bash, also on Windows): `--version`; `coverage-valid` exit 0 + `count=4`; `coverage-invalid` exit 1 + `Validation failed`; `valdiate` exit 2; `--external-rules` loads `throwing-check`; piped `generate json` = `-o` file; `tests/mcp-smoke.mjs` against `opentp mcp`. A failure uploads nothing, so nothing is released |
+   | `build` (needs both) | Per runner: `npm ci --omit=dev`, then `bun build src/cli.ts --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv --target=bun-<target>` with Bun 1.4.2, then "Smoke test the binary" (bash, also on Windows): `--version`; `coverage-valid` exit 0 + `count=4`; `coverage-invalid` exit 1 + `Validation failed`; `valdiate` exit 2; `--external-rules` loads `throwing-check`; piped `generate json` = `-o` file; `tests/mcp-smoke.mjs` against `opentp mcp`; `bunfig.toml`/`.env` in the cwd ignored. A failure uploads nothing, so nothing is released |
    | `release` | `sha256sum` of the four binaries -> `SHA256SUMS`; the `## [X.Y.Z]` section of `CHANGELOG.md` (a warning and only generated notes when it is missing) + generated notes; GitHub Release with the five files (`fail_on_unmatched_files`), `prerelease` when the tag contains `-` |
 
    | Runner | Bun target | Artifact (fixed name) |
@@ -825,11 +826,18 @@ Pick the layer by where the problem lives, so that each problem is reported exac
   fired when `process.argv[1]` contained `"index"`, e.g. a host `index.js` or a checkout path with
   "index"). A host that bundles opentp into its own entry bundle would still run it (the bundle is
   then the main module). Do not reintroduce argv matching.
+- **Never compile a binary without `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`.** Bun
+  standalone executables otherwise load `bunfig.toml` (whose `preload` runs arbitrary code) and `.env`
+  from the working directory, which a plan repository or pull request controls. Every release up to
+  0.9.0 did this; 0.9.1 fixed it. `release.yml`, `ci.yml` and the `compile:*` scripts pass both
+  flags, and both smoke tests run the binary in a directory with a `bunfig.toml` preload and a `.env`
+  (`OPENTP_LOG_LEVEL=bogus`) and fail if either is used.
 - **The Bun binaries rely on `undefined === undefined`.** In an ES module Bun leaves `module` and
   `require.main` undefined, so the guard is true for the compiled `src/cli.ts`; a guard such as
   `typeof module !== "undefined" && ...` makes every binary a silent no-op (exit 0, no output). Tested
-  2026-10-02 with Bun 1.3.5; a Bun upgrade that changes this is caught by the release smoke step
-  (`count=4`), not by CI, which never compiles a binary.
+  with Bun 1.3.5 and 1.4.2 (2026-10-03); a Bun upgrade that changes this is caught by CI ("Binary
+  (linux-x64) smoke test", Node 22 job, `count=4` + MCP smoke) and again by the release smoke step.
+  Bun is pinned in three places that must agree: `release.yml`, `ci.yml` and the `bun` devDependency.
 - **Generator limitations.** Generators get raw, unresolved payloads, with events in unsorted readdir
   order (which differs between node and bun). The template engine cannot nest `#each` or `#if`, and its
   header comment documents a `{{@key}}` that is not implemented. `--output` resolves against root, while
@@ -837,8 +845,11 @@ Pick the layer by where the problem lives, so that each problem is reported exac
 - **Unknown checks are always errors.** opentp-spec's own `examples/extensions` therefore fails with
   `Unknown check: mytool.not-empty`.
 - **Webhook rule:** any 2xx counts as valid (`docs/rules.md` documents a `{ "valid": false }` contract
-  that the code ignores). `${ENV}` in url/headers is interpolated, so untrusted plan changes can
-  exfiltrate CI secrets.
+  that the code ignores). `${ENV}` in url/headers: from 0.9.1, `OPENTP_WEBHOOK_ENV` (set in the run's
+  environment, never in the plan) lists the variables a check may read; any other one fails the check
+  with `WEBHOOK_ENV_NOT_ALLOWED` and sends nothing. Unset, every variable is still read, with one
+  warning per variable (compatibility); the plan is to make "unset = none" the default in the next
+  minor release. `opentp mcp` never runs webhook checks defined in a draft.
 - **`saveYaml` uses a runtime `require("yaml")`**, which works only in the CJS bundle or under bun (not
   in plain ESM). `tsc` does not catch this.
 - **CI smoke checks match output text** (in `ci.yml` and in the binary smoke step of `release.yml`,
@@ -858,7 +869,7 @@ Pick the layer by where the problem lives, so that each problem is reported exac
   window fails (404 on the binary, or a missing `SHA256SUMS`, which is fatal for versions after
   0.7.4); it never installs unverified, and it never mixes the files of two releases (the tag is
   resolved once).
-- **Distribution state (as of 2026-10-03).** The latest release is `v0.9.0` (adds `opentp mcp`): four
+- **Distribution state (as of 2026-10-03).** The latest release is `v0.9.1` (`v0.9.0` added `opentp mcp`): four
   binaries plus `SHA256SUMS`, each binary smoke-tested on its own runner (MCP smoke included). The installers install the
   latest release and verify it (they used to pin 0.7.3); releases up to `v0.7.4` have no `SHA256SUMS`
   and install with a warning. The npm package `opentp` (`0.0.1`, `0.5.0`; spec 2025-06, cannot read

@@ -73,15 +73,17 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.3.5'
+          # Keep in sync with ci.yml ("Binary") and the "bun" devDependency in package.json
+          bun-version: '1.4.2'
 
       - name: Install dependencies
         run: npm ci --omit=dev
 
       - name: Build binary
-        run: bun build src/cli.ts --compile --target=bun-${{ matrix.target }} --outfile ${{ matrix.artifact }}
+        # Standalone binaries must not read bunfig.toml or .env from the working directory (see the smoke test)
+        run: bun build src/cli.ts --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv --target=bun-${{ matrix.target }} --outfile ${{ matrix.artifact }}
 
-      # `verify` tests only the Node bundle. Run every binary on its own runner before it is uploaded, so
+      # `verify` compiles only a linux-x64 binary. Run every binary on its own runner before it is uploaded, so
       # a Bun-specific regression (entry guard, exit codes, plugin import(), Windows paths) cannot be
       # released. Bash on every runner (Git Bash on Windows).
       - name: Smoke test the binary
@@ -141,6 +143,23 @@ jobs:
           node tests/mcp-smoke.mjs "$BIN" mcp --root tests/data/coverage-valid \
             --external-transforms tests/data/mcp-noisy-plugins/transforms \
             --external-rules tests/data/mcp-noisy-plugins/rules
+
+          # The binary must not load bunfig.toml (a preload runs arbitrary code) or .env from the
+          # working directory: a plan repository, for example a pull request, controls that directory
+          probe="$RUNNER_TEMP/cwd-probe"
+          rm -rf "$probe"
+          mkdir -p "$probe"
+          cp -R tests/data/coverage-valid "$probe/plan"
+          printf 'preload = ["./preload.js"]\n' > "$probe/bunfig.toml"
+          printf 'require("node:fs").writeFileSync("preload-ran", "x");\n' > "$probe/preload.js"
+          printf 'OPENTP_LOG_LEVEL=bogus\n' > "$probe/.env"
+          bin_abs="$PWD/${BIN#./}"
+          rc=0
+          (cd "$probe" && "$bin_abs" validate --root plan > /dev/null 2>&1) || rc=$?
+          if [ "$rc" -ne 0 ] || [ -e "$probe/preload-ran" ]; then
+            echo "::error::the binary loaded bunfig.toml or .env from the working directory (exit code ${rc})"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

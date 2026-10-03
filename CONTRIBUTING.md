@@ -139,7 +139,8 @@ npm run format
 3. `npx tsc --noEmit -p .` and `npx tsc --noEmit -p tsconfig.test.json`
 4. `npm test`
 5. `npm run build`
-6. Smoke tests with the built CLI: `tests/data/coverage-valid` must pass with `count=4`, `tests/data/coverage-invalid` must fail, and the `simple` and `full` examples of [opentp-spec](https://github.com/opentrackplan/opentp-spec), checked out at the tag that equals `specVersion` in `package.json`, must pass.
+6. Smoke tests with the built CLI: `tests/data/coverage-valid` must pass with `count=4`, `tests/data/coverage-invalid` must fail, `opentp mcp` must answer over stdio (`tests/mcp-smoke.mjs`, with plugins that print to stdout), and the `simple` and `full` examples of [opentp-spec](https://github.com/opentrackplan/opentp-spec), checked out at the tag that equals `specVersion` in `package.json`, must pass.
+7. Node 22 job only: a linux-x64 binary compiled with Bun (the version pinned in `release.yml` and in the `bun` devDependency) must pass `--version`, `coverage-valid` and the MCP smoke test, and must ignore a `bunfig.toml` and a `.env` in its working directory.
 
 ## Releasing (maintainers)
 
@@ -149,7 +150,7 @@ npm run format
 4. `.github/workflows/release.yml` then:
    - fails unless the tag equals `v` + the `package.json` version (and `package-lock.json` agrees);
    - runs the full CI workflow as its `verify` job;
-   - builds the four binaries (`opentp-linux`, `opentp.exe`, `opentp-mac`, `opentp-mac-intel`) and runs each one on its own platform (version, the two fixtures, an unknown command, an external rule, `generate json`) before uploading it;
+   - builds the four binaries (`opentp-linux`, `opentp.exe`, `opentp-mac`, `opentp-mac-intel`, with `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`) and runs each one on its own platform (version, the two fixtures, an unknown command, an external rule, `generate json`, the MCP smoke test, and a check that `bunfig.toml` and `.env` in the working directory are ignored) before uploading it;
    - generates `SHA256SUMS` and publishes a GitHub Release with all five files and the changelog section. A tag with a pre-release suffix (`v1.0.0-rc.1`) becomes a GitHub pre-release, which the installers do not treat as latest.
 
 The installers download the latest GitHub Release by default, so they need no change for a release. Never move or re-push a published tag: if a release is broken, release a new patch version.

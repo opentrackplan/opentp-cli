@@ -104,6 +104,44 @@ jobs:
           --external-transforms tests/data/mcp-noisy-plugins/transforms
           --external-rules tests/data/mcp-noisy-plugins/rules
 
+      # The release ships Bun-compiled binaries: build one here too (same Bun as release.yml), so a Bun
+      # change that breaks the binary (entry guard, MCP, plugins) fails CI, not the release
+      - name: Setup Bun
+        if: matrix.node-version == '22'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+
+      - name: Binary (linux-x64) smoke test
+        if: matrix.node-version == '22'
+        run: |
+          set -euo pipefail
+          bun build src/cli.ts --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv \
+            --target=bun-linux-x64 --outfile "$RUNNER_TEMP/opentp"
+          "$RUNNER_TEMP/opentp" --version
+          out="$("$RUNNER_TEMP/opentp" validate --root tests/data/coverage-valid 2>&1)"
+          echo "$out"
+          grep -Eq 'count=4$' <<<"$out"
+          node tests/mcp-smoke.mjs "$RUNNER_TEMP/opentp" mcp --root tests/data/coverage-valid \
+            --external-transforms tests/data/mcp-noisy-plugins/transforms \
+            --external-rules tests/data/mcp-noisy-plugins/rules
+
+          # The binary must not load bunfig.toml (a preload runs arbitrary code) or .env from the
+          # working directory: a plan repository, for example a pull request, controls that directory
+          probe="$RUNNER_TEMP/cwd-probe"
+          rm -rf "$probe"
+          mkdir -p "$probe"
+          cp -R tests/data/coverage-valid "$probe/plan"
+          printf 'preload = ["./preload.js"]\n' > "$probe/bunfig.toml"
+          printf 'require("node:fs").writeFileSync("preload-ran", "x");\n' > "$probe/preload.js"
+          printf 'OPENTP_LOG_LEVEL=bogus\n' > "$probe/.env"
+                    rc=0
+          (cd "$probe" && "$RUNNER_TEMP/opentp" validate --root plan > /dev/null 2>&1) || rc=$?
+          if [ "$rc" -ne 0 ] || [ -e "$probe/preload-ran" ]; then
+            echo "::error::the binary loaded bunfig.toml or .env from the working directory (exit code ${rc})"
+            exit 1
+          fi
+
       - name: Read supported spec version
         id: spec
         run: echo "version=$(node -p "require('./package.json').specVersion")" >> "$GITHUB_OUTPUT"

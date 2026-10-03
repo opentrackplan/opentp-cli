@@ -10,6 +10,49 @@ Releases up to 0.7.4 are described only in their
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-03
+
+Supported spec version: `2026-01` (unchanged). No changes to commands, options or output formats.
+One fix can make a plan that passed 0.9.0 fail: an event `dict` override with values outside the
+base enum or dictionary is now an error (see Fixed).
+
+### Security
+
+- **The binaries no longer read `bunfig.toml` or `.env` from the working directory.** Bun-compiled
+  executables loaded both by default, so a plan repository (for example a pull request validated in
+  CI) could run arbitrary code through a `bunfig.toml` `preload`, or set environment variables
+  through `.env`. This affected every earlier binary release; the Node.js bundle was not affected.
+  The release and CI builds now pass `--no-compile-autoload-bunfig --no-compile-autoload-dotenv`, and
+  the smoke tests check that both files are ignored. Update to 0.9.1.
+- **Webhook checks and environment variables:** `OPENTP_WEBHOOK_ENV` (variable names separated by
+  commas, set in the environment of the run, never in the plan) limits which variables `${VAR}` in a
+  `webhook` check's `url` and `headers` may read. A check that uses any other variable fails
+  (`Webhook check uses environment variables that OPENTP_WEBHOOK_ENV does not allow: ...`) and sends
+  no request; an empty value (or `,`) allows none. Without `OPENTP_WEBHOOK_ENV` every variable is
+  still read, as in 0.9.0, with one warning per variable. Set it in CI now: a later minor release
+  will make "unset" allow no variables. It limits which variables are read, not where they are sent:
+  whoever can change the plan (`opentp.yaml` or an event file) can point a check at another URL, so
+  do not run webhook checks that use secrets on untrusted changes.
+
+### Fixed
+
+- **`dict` overrides are checked:** an event that overrides a base field's `enum` or `dict` with its
+  own `dict` must use a dictionary whose values are all in the base enum or dictionary. Such an
+  override passed silently before (`value` and `enum` overrides were already checked).
+- **Installer (`install.sh`):** a shell running under Rosetta on Apple Silicon now installs the native
+  arm64 binary instead of the Intel one.
+- **Installers:** nothing is created under `~/.opentp` until the download is verified, so an aborted
+  install leaves nothing behind, and every `SHA256SUMS` or checksum error ends with "Nothing was
+  installed.".
+- The validation and `generate` failure summaries show the ✗ mark once (`✗ Validation failed ...`).
+
+### Changed
+
+- Release binaries are built with Bun 1.4.2 (was 1.3.5): the Linux and Windows binaries are 20-25 %
+  smaller, the macOS ones about 5 % larger. CI (pushes and pull requests to `main`) now also compiles
+  a linux-x64 binary with the release Bun and smoke-tests it, so most Bun regressions fail CI before
+  a release.
+
 ## [0.9.0] - 2026-10-03
 
 Supported spec version: `2026-01` (unchanged). No breaking changes.
