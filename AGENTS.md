@@ -1033,7 +1033,7 @@ unusable until it is in both tables.
    (the `$id` in `schemas/opentp.cli.schema.json` and the modeline `opentp migrate` writes) is a 302 in
    `opentp-website/public/_redirects` to
    `https://cdn.jsdelivr.net/gh/opentrackplan/opentp-cli@vX.Y.Z/schemas/:splat` (plus a bare
-   `/schemas/cli` rule). After every release that changes `schemas/opentp.cli.schema.json`, bump that
+   `/schemas/cli` rule). With every release (at the latest when `schemas/opentp.cli.schema.json` changes), bump that
    tag in the website (its AGENTS.md recipe "Bump the CLI schema rule after a CLI release") and
    check `curl -sI https://opentp.dev/schemas/cli/opentp.cli.schema.json` after the deploy. The rule
    must point at a published tag (jsDelivr serves tags, and caches them for a long time).
@@ -1214,7 +1214,7 @@ unusable until it is in both tables.
 - **Distribution state (as of 2026-10-03).** The latest release is `v0.10.0` (spec `2026-09`; tag
   at `07e2f94`, four binaries + `SHA256SUMS`, verified after publishing). `v0.9.1` is the last release
   that reads `2026-01`. `https://opentp.dev/schemas/cli/*` points at `opentp-cli@v0.10.0/schemas/`;
-  bump that website rule when a release changes `schemas/opentp.cli.schema.json`. The installers install the latest release and verify it; releases up to `v0.7.4` have no
+  bump that website rule with every release (at the latest when `schemas/opentp.cli.schema.json` changes). The installers install the latest release and verify it; releases up to `v0.7.4` have no
   `SHA256SUMS` and install with a warning. The npm package `opentp` (`0.0.1`, `0.5.0`) is obsolete
   and will not be updated (Rule 9).
 - **`install.ps1` has never been run** (no PowerShell in this environment). It mirrors `install.sh`
@@ -1238,7 +1238,7 @@ unusable until it is in both tables.
       `docs/semantics.md`), and the spec examples still validate with the expected warnings.
 - [ ] For a release, `package.json`/`package-lock.json` version and the tag agree (`release.yml`
       enforces it), the artifact names are unchanged, all five assets return 200, and the website's
-      `/schemas/cli/*` rule points at the new tag when the schema changed.
+      `/schemas/cli/*` rule points at the new tag.
 - [ ] User-visible changes are listed under `## [Unreleased]` in `CHANGELOG.md` (breaking first).
 - [ ] This `AGENTS.md` is updated if layout, commands, counts, conventions or known issues changed.
 - [ ] The commit message is in English and uses a conventional prefix.
